@@ -25,11 +25,12 @@ class Transformer {
       }
     }
 
-    val script = p.pScriptC
+    val script = p.pScriptC.asInstanceOf[Script]
+    val script2 = RecFunElim.visit(script, ())
 
     val out = new java.io.FileOutputStream(outputFile)
     Console.withOut(out) {
-      println(printer print script)
+      println(printer print script2)
     }
 
     out.close
