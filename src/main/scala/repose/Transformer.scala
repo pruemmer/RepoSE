@@ -9,6 +9,8 @@ import scala.collection.JavaConverters._
 
 class Transformer {
 
+  import scala.collection.JavaConversions.{asScalaBuffer, asScalaIterator}
+
   val printer = new PrettyPrinterNonStatic
 
   def transform(inputFile : String, outputFile : String) : Unit = {
@@ -30,10 +32,15 @@ class Transformer {
 
     val out = new java.io.FileOutputStream(outputFile)
     Console.withOut(out) {
-      println(printer print script2)
+      printLineByLine(script2)
     }
 
     out.close
+  }
+
+  def printLineByLine(script : ScriptC) : Unit = {
+    for (cmd <- script.asInstanceOf[Script].listcommand_)
+      println(printer print cmd)
   }
 
 }

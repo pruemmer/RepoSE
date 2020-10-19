@@ -12,12 +12,38 @@ object ASTMatchers {
   import scala.collection.JavaConversions.{asScalaBuffer, asScalaIterator}
 
   object FunApp {
-    def unapplySeq(r : FunctionTerm) : SOption[Seq[AnyRef]] = {
-      Some(List(r.symbolref_) ++ r.listterm_)
+    def unapplySeq(r : FunctionTerm) : SOption[(SymbolRef, Seq[Term])] = {
+      Some((r.symbolref_, r.listterm_))
+    }
+  }
+
+  object PlainApp {
+    def apply(f : String, args : Term*) : FunctionTerm = {
+      val termArgs = new ListTerm()
+      for (a <- args)
+        termArgs.add(a)
+      new FunctionTerm(PlainSymbol(f), termArgs)
+    }
+    def unapplySeq(r : FunctionTerm) : SOption[(String, Seq[Term])] = r match {
+      case FunApp(PlainSymbol(str), rest @ _*) => Some(str, rest)
+      case _ => None
+    }
+  }
+
+  object IntLit {
+    def unapply(t : AnyRef) : SOption[Int] = t match {
+      case t : ConstantTerm  => t.specconstant_ match {
+        case c : NumConstant => Some(c.numeral_.toInt)
+        case _ => None
+      }
+      case PlainApp("-", IntLit(v)) => Some(-v)
+      case _ => None
     }
   }
 
   object PlainSymbol {
+    def apply(s : String) : SymbolRef =
+      new IdentifierRef(new SymbolIdent(new NormalSymbol(s)))
     def unapply(s : SymbolRef) : scala.Option[String] = s match {
       case s : IdentifierRef => PlainIdentifier unapply s.identifier_
       case _ => None
