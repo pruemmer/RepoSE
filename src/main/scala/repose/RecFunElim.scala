@@ -79,13 +79,15 @@ class RecFunElim extends ComposVisitor[Unit] {
   private var usedElimLeft, usedElimRight = false
 
   def apply(cmds : Seq[Command]) : Seq[Command] = {
-    val res = cmds filterNot {
-      case cmd : RecFunctionDefsCommand =>
-        (printer print cmd) contains "str.repeat"
-      case _ =>
-        false
-    }
-    val res2 = for (cmd <- res) yield cmd.accept(this, ())
+    val res =
+      cmds filterNot {
+        case cmd : RecFunctionDefsCommand =>
+          (printer print cmd) contains "str.repeat"
+        case _ =>
+          false
+      }
+    val res2 =
+      for (cmd <- res) yield cmd.accept(this, ())
     val res3 =
       addTransducer(res2, usedElimLeft, elimLeftTransducer, elimLeftDefs)
     val res4 =
