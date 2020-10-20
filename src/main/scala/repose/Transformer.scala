@@ -17,29 +17,18 @@ class Transformer {
     Console.err.println("Rewriting \"" + inputFile +
                           "\" to \"" + outputFile + "\" ...")
 
-    val input =
-      new java.io.BufferedReader (
-        new java.io.FileReader(new java.io.File (inputFile)))
-    val l = new Yylex(input)
-    val p = new parser(l) {
-      override def report_error(message : String, info : Object) : Unit = {
-        Console.err.println(message)
-      }
-    }
-
-    val script = p.pScriptC.asInstanceOf[Script]
-    val script2 = RecFunElim.visit(script, ())
+    val script = Parsing.parseFromFile(inputFile)
+    val script2 = RecFunElim(script)
 
     val out = new java.io.FileOutputStream(outputFile)
     Console.withOut(out) {
       printLineByLine(script2)
     }
-
     out.close
   }
 
-  def printLineByLine(script : ScriptC) : Unit = {
-    for (cmd <- script.asInstanceOf[Script].listcommand_)
+  def printLineByLine(script : Seq[Command]) : Unit = {
+    for (cmd <- script)
       println(printer print cmd)
   }
 
