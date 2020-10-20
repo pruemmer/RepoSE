@@ -1,9 +1,14 @@
 
 package repose;
 
-object Main extends App {
-  val trans = new Transformer
+object Main {
 
-  trans.transform("test/glob_78.smt2",
-                  "test/glob_78_rewritten.smt2")
+  def main(args: Array[String]) : Unit = {
+    val trans = new Transformer
+    for (inputFile <- args) {
+      val outputFile = inputFile + "-processed.smt2"
+      trans.transform(inputFile, outputFile)
+    }
+  }
+
 }
