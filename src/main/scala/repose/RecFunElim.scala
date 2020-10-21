@@ -129,6 +129,16 @@ class RecFunElim extends ComposVisitor[Unit] {
       }
       case PlainApp("str.substr",
                     t1,
+                    WhiteLeft(t2),
+                    PlainApp("+",
+                             PlainApp("str.len", t4),
+                             PlainApp("*", IntLit(-1), WhiteLeft(t3))))
+          if t1 == t2 && t1 == t3 && t1 == t4 => {
+        usedElimLeft = true
+        PlainApp("elimWhiteLeft", t1)
+      }
+      case PlainApp("str.substr",
+                    t1,
                     IntLit(0),
                     PlainApp("+", IntLit(1), WhiteRight(t2)))
           if t1 == t2 => {
