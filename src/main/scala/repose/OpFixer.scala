@@ -8,8 +8,6 @@ import scala.{Option => SOption}
 import scala.collection.JavaConverters._
 
 object OpFixer extends ComposVisitor[Unit] {
-  val printer = new PrettyPrinterNonStatic
-
   import ASTMatchers._
 
   def apply(cmds : Seq[Command]) : Seq[Command] =
