@@ -18,9 +18,9 @@ class Transformer {
                           "\" to \"" + outputFile + "\" ...")
 
     val script  = Parsing.parseFromFile(inputFile)
-    val script2 = RecFunElim(script)
-    val script3 = RegexRecoder(script2)
-    val script4 = OpFixer(script3)
+    val script2 = OpFixer(script)
+    val script3 = RecFunElim(script2)
+    val script4 = RegexRecoder(script3)
     val script5 = QuotedIdSanitizer(script4)
 
     val out = new java.io.FileOutputStream(outputFile)

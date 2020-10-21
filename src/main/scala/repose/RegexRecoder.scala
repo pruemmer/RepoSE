@@ -10,11 +10,34 @@ import scala.collection.JavaConverters._
 object RegexRecoder extends ComposVisitor[Unit] {
   val printer = new PrettyPrinterNonStatic
 
+  val fillVarName = " Fill "
+
   import ASTMatchers._
 
-  def apply(cmds : Seq[Command]) : Seq[Command] =
+  def apply(cmds : Seq[Command]) : Seq[Command] = {
+    var withinRegexCode = false
+
     for (cmd <- cmds;
-         if !((printer print cmd) contains " Fill "))
+         if (cmd match {
+               case FunctionDecl(name, _, _)
+                   if ((printer print name) contains fillVarName) =>
+                 false
+               case Assert(PlainApp("str.in.re", name, _))
+                   if ((printer print name) contains fillVarName) => {
+                 withinRegexCode = true
+                 false
+               }
+               case cmd if withinRegexCode =>
+                 if ((printer print cmd) contains fillVarName) {
+                   false
+                 } else {
+                   withinRegexCode = false
+                   true
+                 }
+               case _ =>
+                 true
+         }))
     yield cmd
+  }
 
 }

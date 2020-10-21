@@ -41,6 +41,18 @@ object ASTMatchers {
     }
   }
 
+  object FunctionDecl {
+    def unapply(r : FunctionDeclCommand) : SOption[(Symbol, MESorts, Sort)] = {
+      Some((r.symbol_, r.mesorts_, r.sort_))
+    }
+  }
+
+  object Assert {
+    def unapply(r : AssertCommand) : SOption[Term] = {
+      Some((r.term_))
+    }
+  }
+
   object PlainSymbol {
     def apply(s : String) : SymbolRef =
       new IdentifierRef(new SymbolIdent(new NormalSymbol(s)))
