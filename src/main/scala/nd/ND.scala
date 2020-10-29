@@ -44,12 +44,6 @@ trait NDSearch[Result] {
   def chooseInt(r : Range)(comp : Int => Unit) : Unit
 
   /**
-   * Choose the minimum value in the given integer range for which program
-   * execution will succeed.
-   */
-  def chooseMinInt(r : Range)(comp : Int => Unit) : Unit
-
-  /**
    * Assume that the given condition is true, block program execution
    * otherwise.
    */
@@ -74,10 +68,23 @@ trait NDSearch[Result] {
 }
 
 /**
+ * Functions controlling alternating (existential/universal) execution.
+ */
+trait AlternatingSearch[Result] extends NDSearch[Result] {
+
+  /**
+   * Choose the minimum value in the given integer range for which program
+   * execution will succeed.
+   */
+  def chooseMinInt(r : Range)(comp : Int => Unit) : Unit
+
+}
+
+/**
  * Functions controlling non-deterministic execution with the help of
  * back-tracking.
  */
-trait BacktrackingSearch[Result] extends NDSearch[Result] {
+trait BacktrackingSearch[Result] extends AlternatingSearch[Result] {
 
   private object BacktrackingException            extends Exception
   private case class SuccessException(r : Result) extends Exception
