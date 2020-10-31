@@ -51,6 +51,11 @@ object RegexRecoder {
     yield cmd
   }
 
+  object ContainsSymbolVisitor {
+    def apply(cmd : Command)(pred : String => Boolean) : Boolean =
+      (new ContainsSymbolVisitor(pred))(cmd)
+  }
+
   class ContainsSymbolVisitor(pred : String => Boolean)
         extends FoldVisitor[Boolean, Unit] {
     def apply(cmd : Command) : Boolean =

@@ -22,14 +22,14 @@ package nd
 /**
  * Functions controlling non-deterministic execution.
  */
-trait NDSearch[Result] {
+trait NDSearch {
 
   trait ValueEnum[T]
 
   /**
    * Start a non-deterministic computation.
    */
-  def search(comp : => Unit) : Option[Result]
+  def search[Result](comp : => Unit) : Option[Result]
 
   /**
    * Non-deterministically choose a value of type <code>T</code> and continue
@@ -50,9 +50,17 @@ trait NDSearch[Result] {
   def assume(f : Boolean) : Unit
 
   /**
+   * Assume that the given option is not empty, and return its contents.
+   */
+  def assumeIsDefined[Data](v : Option[Data]) : Data = {
+    assume(v.isDefined)
+    v.get
+  }
+
+  /**
    * Program execution has succeeded.
    */
-  def success(r : Result) : Unit
+  def success[Result](r : Result) : Unit
 
   /**
    * Program execution has reached a dead end.
@@ -70,7 +78,7 @@ trait NDSearch[Result] {
 /**
  * Functions controlling alternating (existential/universal) execution.
  */
-trait AlternatingSearch[Result] extends NDSearch[Result] {
+trait AlternatingSearch extends NDSearch {
 
   /**
    * Choose the minimum value in the given integer range for which program
@@ -84,21 +92,23 @@ trait AlternatingSearch[Result] extends NDSearch[Result] {
  * Functions controlling non-deterministic execution with the help of
  * back-tracking.
  */
-trait BacktrackingSearch[Result] extends AlternatingSearch[Result] {
+trait BacktrackingSearch extends AlternatingSearch {
 
-  private object BacktrackingException            extends Exception
-  private case class SuccessException(r : Result) extends Exception
+  private object BacktrackingException                    extends Exception
+  private case class SuccessException[Result](r : Result) extends Exception
 
-  def search(comp : => Unit) : Option[Result] =
+  def search[Result](comp : => Unit) : Option[Result] =
     try {
       comp
       None
     } catch {
-      case SuccessException(result) => Some(result)
-      case BacktrackingException    => None
+      case SuccessException(result : Result) =>
+        Some(result)
+      case BacktrackingException =>
+        None
     }
 
-  def success(r : Result) : Unit =
+  def success[Result](r : Result) : Unit =
     throw new SuccessException (r)
 
   trait BTValueEnum[T] extends ValueEnum[T] {
