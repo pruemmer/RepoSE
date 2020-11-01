@@ -11,8 +11,10 @@ import scala.collection.JavaConverters._
 
 object MatchRecoder extends BacktrackingSearch {
   import RegexRecoder.ContainsSymbolVisitor
+  import ASTMatchers._
 
-  val FillVarName = """\|([0-9]+) Fill ([0-9]+)\|""".r
+  val FillVarName   = """([0-9]+) Fill ([0-9]+)""".r
+  val MatchFlagName = """IsMatch_/(.+)/_([0-9]+)""".r
 
   val printer = new PrettyPrinterNonStatic
 
@@ -20,17 +22,61 @@ object MatchRecoder extends BacktrackingSearch {
 
   def findOccurrence(cmds : Seq[Command]) : SOption[MatchOcc] =
     search[MatchOcc] {
-      chooseMinInt(0 until cmds.size) { start =>
-        val cmd = cmds(start)
-        assume(cmd.isInstanceOf[AssertCommand])
-        val fillNameIndex = assumeIsDefined {
-          FindSymbolVisitor(cmd) {
-            case FillVarName(num1, "0") => Some(num1.toInt)
+      chooseInt(0 until cmds.size) { start =>
+        val startCmd = cmds(start)
+        assume(startCmd.isInstanceOf[AssertCommand])
+
+        val FillNameIndex = assumeIsDefined {
+          FindSymbolVisitor(startCmd) {
+            case FillVarName(num1, "0") => Some(num1)
             case _                      => None
           }
         }
-        println(fillNameIndex)
-        success(MatchOcc(start, start + 1))
+
+        assumeForall(0 until start) { ind =>
+          !(cmds(ind).isInstanceOf[AssertCommand] &&
+              ContainsSymbolVisitor(cmds(ind)) {
+                case FillVarName(FillNameIndex, _) => true
+                case _ => false
+              })
+        }
+
+        val (matchInd, regex) =
+          findMinInt[(Int, String)]((start + 1) until cmds.size) { end =>
+            val regex = assumeIsDefined {
+              cmds(end) match {
+                case AssertCmd(PlainApp(MatchFlagName(regex, "0"))) =>
+                  Some(regex)
+                case _ =>
+                  None
+              }
+            }
+            success((end, regex))
+          }
+
+        println(regex)
+
+        chooseInt(start until matchInd) { concatInd =>
+          val (mainVar, groups) = assumeIsDefined {
+            cmds(concatInd) match {
+              case AssertCmd(PlainApp("=",
+                                      PlainApp(mainVar),
+                                      PlainApp("str.++", rawGroups @ _*))) => {
+                val groups =
+                  for (PlainApp(s@FillVarName(FillNameIndex, _)) <- rawGroups)
+                  yield s
+                Some((mainVar, groups))
+              }
+              case _ =>
+                None
+            }
+          }
+
+          println(mainVar)
+          println(groups)
+
+          success(MatchOcc(start, matchInd))
+        }
       }
     }
 
@@ -52,7 +98,7 @@ object MatchRecoder extends BacktrackingSearch {
     override def visit(p : NormalSymbol, arg : Unit) : SOption[Data] =
       pred(p.normalsymbolt_)
     override def visit(p : QuotedSymbol, arg : Unit) : SOption[Data] =
-      pred(p.quotedsymbolt_)
+      pred(p.quotedsymbolt_.substring(1, p.quotedsymbolt_.size - 1))
   }
 
 }

@@ -32,6 +32,16 @@ trait NDSearch {
   def search[Result](comp : => Unit) : Option[Result]
 
   /**
+   * Recursively start a non-deterministic computation, assume that it
+   * is successful, and return the produced result. This method can be
+   * used to control back-tracking, similarly as a cut in Prolog, since
+   * choice points within the computation will be discarded once the first
+   * result has been found.
+   */
+  def find[Result](comp : => Unit) : Result =
+    assumeIsDefined(search[Result](comp))
+
+  /**
    * Non-deterministically choose a value of type <code>T</code> and continue
    * program execution.
    */
@@ -42,6 +52,13 @@ trait NDSearch {
    * continue program execution.
    */
   def chooseInt(r : Range)(comp : Int => Unit) : Unit
+
+  /**
+   * Recursively start a non-deterministic computation to find some
+   * integer for which a computation succeeds.
+   */
+  def findInt[Result](r : Range)(comp : Int => Unit) : Result =
+    find[Result] { chooseInt(r)(comp) }
 
   /**
    * Assume that the given condition is true, block program execution
@@ -86,6 +103,18 @@ trait AlternatingSearch extends NDSearch {
    */
   def chooseMinInt(r : Range)(comp : Int => Unit) : Unit
 
+  /**
+   * Recursively start a non-deterministic computation to find the minimum
+   * integer for which some computation succeeds.
+   */
+  def findMinInt[Result](r : Range)(comp : Int => Unit) : Result =
+    find[Result] { chooseMinInt(r)(comp) }
+
+  /**
+   * Assume that the given predicate holds for all elements of a collection.
+   */
+  def assumeForall[T](coll : Iterable[T])(pred : T => Boolean) : Unit
+
 }
 
 /**
@@ -100,7 +129,7 @@ trait BacktrackingSearch extends AlternatingSearch {
   def search[Result](comp : => Unit) : Option[Result] =
     try {
       comp
-      None
+      throw new Exception("search did not yield a result, \"success\" missing?")
     } catch {
       case SuccessException(result : Result) =>
         Some(result)
@@ -128,6 +157,9 @@ trait BacktrackingSearch extends AlternatingSearch {
   def chooseMinInt(r : Range)(comp : Int => Unit) : Unit =
     chooseInt(r)(comp)
 
+  def assumeForall[T](coll : Iterable[T])(pred : T => Boolean) : Unit =
+    assume(coll forall pred)
+
   private def chooseFromIterator[T](it : Iterator[T],
                                     comp : T => Unit) : Unit = {
     var next = it.next
@@ -143,6 +175,7 @@ trait BacktrackingSearch extends AlternatingSearch {
 
     // last possible value
     comp(next)
+    throw new Exception("control most not leave \"choose\" statement")
   }
 
   def assume(f : Boolean) : Unit =

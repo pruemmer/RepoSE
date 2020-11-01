@@ -12,19 +12,27 @@ object ASTMatchers {
   import scala.collection.JavaConversions.{asScalaBuffer, asScalaIterator}
 
   object FunApp {
-    def unapplySeq(r : FunctionTerm) : SOption[(SymbolRef, Seq[Term])] = {
-      Some((r.symbolref_, r.listterm_))
+    def unapplySeq(r : Term) : SOption[(SymbolRef, Seq[Term])] = r match {
+      case r : FunctionTerm =>
+        Some((r.symbolref_, r.listterm_))
+      case r : NullaryTerm =>
+        Some((r.symbolref_, List()))
+      case _ =>
+        None
     }
   }
 
   object PlainApp {
-    def apply(f : String, args : Term*) : FunctionTerm = {
-      val termArgs = new ListTerm()
-      for (a <- args)
-        termArgs.add(a)
-      new FunctionTerm(PlainSymbol(f), termArgs)
-    }
-    def unapplySeq(r : FunctionTerm) : SOption[(String, Seq[Term])] = r match {
+    def apply(f : String, args : Term*) : Term =
+      if (args.isEmpty) {
+        new NullaryTerm(PlainSymbol(f))
+      } else {
+        val termArgs = new ListTerm()
+        for (a <- args)
+          termArgs.add(a)
+        new FunctionTerm(PlainSymbol(f), termArgs)
+      }
+    def unapplySeq(r : Term) : SOption[(String, Seq[Term])] = r match {
       case FunApp(PlainSymbol(str), rest @ _*) => Some(str, rest)
       case _ => None
     }
@@ -106,6 +114,10 @@ object ASTMatchers {
       }
       case _ => None
     }
-  }  
+  }
+
+  object AssertCmd {
+    def unapply(cmd : AssertCommand) : scala.Option[Term] = Some(cmd.term_)
+  }
 
 }
