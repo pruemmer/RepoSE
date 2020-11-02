@@ -13,12 +13,19 @@ object MatchRecoder extends BacktrackingSearch {
   import RegexRecoder.ContainsSymbolVisitor
   import ASTMatchers._
 
+  def apply(cmds : Seq[Command]) : Seq[Command] = {
+    for (MatchOcc(_, _, regex) <- findOccurrence(cmds)) {
+      println(Reg2PT(regex))
+    }
+    cmds
+  }
+
   val FillVarName   = """([0-9]+) Fill ([0-9]+)""".r
   val MatchFlagName = """IsMatch_/(.+)/_([0-9]+)""".r
 
   val printer = new PrettyPrinterNonStatic
 
-  case class MatchOcc(start : Int, end : Int)
+  case class MatchOcc(start : Int, end : Int, regex : String)
 
   def findOccurrence(cmds : Seq[Command]) : SOption[MatchOcc] =
     search[MatchOcc] {
@@ -75,7 +82,7 @@ object MatchRecoder extends BacktrackingSearch {
           println(mainVar)
           println(groups)
 
-          success(MatchOcc(start, matchInd))
+          success(MatchOcc(start, matchInd, regex))
         }
       }
     }
