@@ -13,19 +13,32 @@ object MatchRecoder extends BacktrackingSearch {
   import RegexRecoder.ContainsSymbolVisitor
   import ASTMatchers._
 
-  def apply(cmds : Seq[Command]) : Seq[Command] = {
-    for (MatchOcc(_, _, regex) <- findOccurrence(cmds)) {
-      println(Reg2PT(regex))
-    }
-    cmds
-  }
+  def apply(cmds : Seq[Command]) : Seq[Command] =
+    (for (MatchOcc(startInd, membershipInd, concatInd, _,
+                   regex, stringVar, cpVars) <- findOccurrence(cmds)) yield {
+       val (transducerFuns, transducerDefs) = Reg2PT(regex)
+       // assert(transducerFuns.size == cpVars.size)
+       var newCmds = cmds
+       val transducerApps =
+         for ((cpVar, tdFun) <- cpVars zip transducerFuns) yield
+           AssertCmd(PlainApp(tdFun, PlainApp(stringVar), PlainApp(cpVar)))
+       newCmds = newCmds.patch(concatInd, transducerApps, 1)
+       newCmds = newCmds.patch(startInd, List(), membershipInd - startInd)
+       Transducers.addTransducers(newCmds, transducerDefs)
+     }) getOrElse cmds
 
   val FillVarName   = """([0-9]+) Fill ([0-9]+)""".r
   val MatchFlagName = """IsMatch_/(.+)/_([0-9]+)""".r
 
   val printer = new PrettyPrinterNonStatic
 
-  case class MatchOcc(start : Int, end : Int, regex : String)
+  case class MatchOcc(startInd : Int,
+                      membershipInd : Int,
+                      concatInd : Int,
+                      matchInd : Int,
+                      regex : String,
+                      stringVar : String,
+                      cgVars : Seq[String])
 
   def findOccurrence(cmds : Seq[Command]) : SOption[MatchOcc] =
     search[MatchOcc] {
@@ -82,7 +95,8 @@ object MatchRecoder extends BacktrackingSearch {
           println(mainVar)
           println(groups)
 
-          success(MatchOcc(start, matchInd, regex))
+          success(MatchOcc(start, concatInd - 1, concatInd, matchInd, regex,
+                           mainVar, groups))
         }
       }
     }

@@ -9,6 +9,14 @@ import scala.collection.JavaConverters._
 
 object ASTMatchers {
 
+  private val SaneId =
+    """[+-/*=%?!.$_~&^<>@a-zA-Z][+-/*=%?!.$_~&^<>@a-zA-Z0-9]*""".r
+  
+  def quoteIdentifier(str : String) = str match {
+    case SaneId() => str
+    case _        => "|" + str.replace("|", "") + "|"
+  }
+
   import scala.collection.JavaConversions.{asScalaBuffer, asScalaIterator}
 
   object FunApp {
@@ -63,7 +71,12 @@ object ASTMatchers {
 
   object PlainSymbol {
     def apply(s : String) : SymbolRef =
-      new IdentifierRef(new SymbolIdent(new NormalSymbol(s)))
+      quoteIdentifier(s) match {
+        case `s` =>
+          new IdentifierRef(new SymbolIdent(new NormalSymbol(s)))
+        case qs =>
+          new IdentifierRef(new SymbolIdent(new QuotedSymbol(qs)))
+      }
     def unapply(s : SymbolRef) : scala.Option[String] = s match {
       case s : IdentifierRef => PlainIdentifier unapply s.identifier_
       case _ => None
@@ -117,6 +130,7 @@ object ASTMatchers {
   }
 
   object AssertCmd {
+    def apply(t : Term) = new AssertCommand(t)
     def unapply(cmd : AssertCommand) : scala.Option[Term] = Some(cmd.term_)
   }
 
