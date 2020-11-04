@@ -14,18 +14,7 @@ object MatchRecoder extends BacktrackingSearch {
   import ASTMatchers._
 
   def apply(cmds : Seq[Command]) : Seq[Command] =
-    (for (MatchOcc(startInd, membershipInd, concatInd, _,
-                   regex, stringVar, cpVars) <- findOccurrence(cmds)) yield {
-       val (transducerFuns, transducerDefs) = Reg2PT(regex)
-       // assert(transducerFuns.size == cpVars.size)
-       var newCmds = cmds
-       val transducerApps =
-         for ((cpVar, tdFun) <- cpVars zip transducerFuns) yield
-           AssertCmd(PlainApp(tdFun, PlainApp(stringVar), PlainApp(cpVar)))
-       newCmds = newCmds.patch(concatInd, transducerApps, 1)
-       newCmds = newCmds.patch(startInd, List(), membershipInd - startInd)
-       Transducers.addTransducers(newCmds, transducerDefs)
-     }) getOrElse cmds
+    (for (occ <- findOccurrence(cmds)) yield recode(cmds, occ) getOrElse cmds
 
   val FillVarName   = """([0-9]+) Fill ([0-9]+)""".r
   val MatchFlagName = """IsMatch_/(.+)/_([0-9]+)""".r
@@ -39,6 +28,20 @@ object MatchRecoder extends BacktrackingSearch {
                       regex : String,
                       stringVar : String,
                       cgVars : Seq[String])
+
+  def recode(cmds : Seq[Command], occ : MatchOcc) : Seq[Command] = {
+    val MatchOcc(startInd, membershipInd, concatInd, _,
+                 regex, stringVar, cpVars) = occ
+    val (transducerFuns, transducerDefs) = Reg2PT(regex)
+    assert(transducerFuns.size == cpVars.size)
+    var newCmds = cmds
+    val transducerApps =
+      for ((cpVar, tdFun) <- cpVars zip transducerFuns)
+      yield AssertCmd(PlainApp(tdFun, PlainApp(stringVar), PlainApp(cpVar)))
+    newCmds = newCmds.patch(concatInd, transducerApps, 1)
+    newCmds = newCmds.patch(startInd, List(), membershipInd - startInd)
+    Transducers.addTransducers(newCmds, transducerDefs)
+  }
 
   def findOccurrence(cmds : Seq[Command]) : SOption[MatchOcc] =
     search[MatchOcc] {
