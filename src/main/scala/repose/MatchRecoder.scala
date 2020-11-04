@@ -13,8 +13,23 @@ object MatchRecoder extends BacktrackingSearch {
   import RegexRecoder.ContainsSymbolVisitor
   import ASTMatchers._
 
-  def apply(cmds : Seq[Command]) : Seq[Command] =
-    (for (occ <- findOccurrence(cmds)) yield recode(cmds, occ)) getOrElse cmds
+  def apply(cmds : Seq[Command]) : Seq[Command] = {
+    var num     = 0
+    var curCmds = cmds
+
+    var cont    = true
+    while (cont)
+      findOccurrence(curCmds) match {
+        case Some(occ) => {
+          curCmds = recode(curCmds, occ, num)
+          num = num + 1
+        }
+        case None =>
+          cont = false
+      }
+
+    curCmds
+  }
 
   val FillVarName   = """([0-9]+) Fill ([0-9]+)""".r
   val MatchFlagName = """IsMatch_/(.+)/_([0-9]+)""".r
@@ -29,10 +44,11 @@ object MatchRecoder extends BacktrackingSearch {
                       stringVar : String,
                       cgVars : Seq[String])
 
-  def recode(cmds : Seq[Command], occ : MatchOcc) : Seq[Command] = {
+  def recode(cmds : Seq[Command], occ : MatchOcc,
+             num : Int) : Seq[Command] = {
     val MatchOcc(startInd, membershipInd, concatInd, _,
                  regex, stringVar, cpVars) = occ
-    val (transducerFuns, transducerDefs) = Reg2PT(regex, "MatchTD")
+    val (transducerFuns, transducerDefs) = Reg2PT(regex, "MatchTD_" + num + "_")
     assert(transducerFuns.size == cpVars.size)
     var newCmds = cmds
     val transducerApps =

@@ -16,8 +16,8 @@ object Reg2PT {
         case None => "reg2pt"
       }
 
-    executable + " -s " + prefix + " \'" + regex + "\'"
-//    "java -jar lib/reg2pt.jar -s \'" + regex + "\'"
+    Seq(executable, "-s", prefix, regex)
+//    "java -jar lib/reg2pt.jar -s '" + regex + "'"
   }
 
   def apply(regex : String, prefix : String) : (Seq[String], Seq[Command]) = {
