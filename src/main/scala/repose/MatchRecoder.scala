@@ -16,8 +16,8 @@ object MatchRecoder extends BacktrackingSearch {
   def apply(cmds : Seq[Command]) : Seq[Command] =
     (for (MatchOcc(startInd, membershipInd, concatInd, _,
                    regex, stringVar, cpVars) <- findOccurrence(cmds)) yield {
-       val (transducerFuns, transducerDefs) = Reg2PT(regex)
-       // assert(transducerFuns.size == cpVars.size)
+       val (transducerFuns, transducerDefs) = Reg2PT(regex, "matchTD")
+       assert(transducerFuns.size == cpVars.size)
        var newCmds = cmds
        val transducerApps =
          for ((cpVar, tdFun) <- cpVars zip transducerFuns) yield
