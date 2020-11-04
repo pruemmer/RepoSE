@@ -8,7 +8,7 @@ else
     pathCmd="realpath"
 fi
 
-BASEDIR=`dirname $($pathCmd $0)`
+export BASEDIR=`dirname $($pathCmd $0)`
 TARGET=`echo $BASEDIR/target/scala-*/RepoSE-assembly*.jar`
 LIBDIR=$BASEDIR/lib
 JAVA=java
