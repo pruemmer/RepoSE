@@ -9,9 +9,21 @@ import nd._
 import scala.{Option => SOption}
 import scala.collection.JavaConverters._
 
-object MatchRecoder extends BacktrackingSearch {
-  import RegexRecoder.ContainsSymbolVisitor
+object Constants {
+
+  val FillVarName   = """([0-9]+) Fill ([0-9]+)""".r
+  val MatchFlagName = """IsMatch_/(.+)/_([0-9]+)""".r
+
+  val fillVarName = " Fill "
+
   import ASTMatchers._
+  val MarkerAssertion = AssertCmd(PlainApp("EncodingMarker"))
+
+}
+
+object MatchRecoder extends BacktrackingSearch {
+  import ASTMatchers._
+  import Constants._
 
   def apply(cmds : Seq[Command]) : Seq[Command] = {
     var num     = 0
@@ -31,9 +43,6 @@ object MatchRecoder extends BacktrackingSearch {
     curCmds
   }
 
-  val FillVarName   = """([0-9]+) Fill ([0-9]+)""".r
-  val MatchFlagName = """IsMatch_/(.+)/_([0-9]+)""".r
-
   val printer = new PrettyPrinterNonStatic
 
   case class MatchOcc(startInd : Int,
@@ -44,8 +53,7 @@ object MatchRecoder extends BacktrackingSearch {
                       stringVar : String,
                       cgVars : Seq[String])
 
-  def recode(cmds : Seq[Command], occ : MatchOcc,
-             num : Int) : Seq[Command] = {
+  def recode(cmds : Seq[Command], occ : MatchOcc, num : Int) : Seq[Command] = {
     val MatchOcc(startInd, membershipInd, concatInd, _,
                  regex, stringVar, cpVars) = occ
     val (transducerFuns, transducerDefs) = Reg2PT(regex, "MatchTD_" + num + "_")
@@ -54,8 +62,10 @@ object MatchRecoder extends BacktrackingSearch {
     val transducerApps =
       for ((cpVar, tdFun) <- cpVars zip transducerFuns)
       yield AssertCmd(PlainApp(tdFun, PlainApp(stringVar), PlainApp(cpVar)))
+
     newCmds = newCmds.patch(concatInd, transducerApps, 1)
     newCmds = newCmds.patch(startInd, List(), membershipInd - startInd)
+
     Transducers.addTransducers(newCmds, transducerDefs)
   }
 
@@ -93,8 +103,6 @@ object MatchRecoder extends BacktrackingSearch {
             success((end, regex))
           }
 
-        println(regex)
-
         chooseInt(start until matchInd) { concatInd =>
           val (mainVar, groups) = assumeIsDefined {
             cmds(concatInd) match {
@@ -111,34 +119,10 @@ object MatchRecoder extends BacktrackingSearch {
             }
           }
 
-          println(mainVar)
-          println(groups)
-
           success(MatchOcc(start, concatInd - 1, concatInd, matchInd, regex,
                            mainVar, groups))
         }
       }
     }
-
-  abstract class FindDataVisitor[Data]
-           extends FoldVisitor[SOption[Data], Unit] {
-    def apply(cmd : Command) : SOption[Data] = cmd.accept(this, ())
-    def leaf(arg : Unit) = None
-    def combine(x : SOption[Data], y : SOption[Data], arg : Unit) = x orElse y
-  }
-
-  object FindSymbolVisitor {
-    def apply[Data](cmd : Command)
-                   (pred : String => SOption[Data]) : SOption[Data] =
-      (new FindSymbolVisitor(pred))(cmd)
-  }
-
-  class FindSymbolVisitor[Data](pred : String => SOption[Data])
-        extends FindDataVisitor[Data] {
-    override def visit(p : NormalSymbol, arg : Unit) : SOption[Data] =
-      pred(p.normalsymbolt_)
-    override def visit(p : QuotedSymbol, arg : Unit) : SOption[Data] =
-      pred(p.quotedsymbolt_.substring(1, p.quotedsymbolt_.size - 1))
-  }
 
 }

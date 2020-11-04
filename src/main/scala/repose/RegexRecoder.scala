@@ -10,9 +10,8 @@ import scala.collection.JavaConverters._
 object RegexRecoder {
   val printer = new PrettyPrinterNonStatic
 
-  val fillVarName = " Fill "
-
   import ASTMatchers._
+  import Constants._
 
   def apply(cmds : Seq[Command]) : Seq[Command] = {
     var nextId = -1
@@ -49,25 +48,6 @@ object RegexRecoder {
                  true
          }))
     yield cmd
-  }
-
-  object ContainsSymbolVisitor {
-    def apply(cmd : Command)(pred : String => Boolean) : Boolean =
-      (new ContainsSymbolVisitor(pred))(cmd)
-  }
-
-  class ContainsSymbolVisitor(pred : String => Boolean)
-        extends FoldVisitor[Boolean, Unit] {
-    def apply(cmd : Command) : Boolean =
-      cmd.accept(this, ())
-
-    def leaf(arg : Unit) = false
-    def combine(x : Boolean, y : Boolean, arg : Unit) = x || y
-
-    override def visit(p : NormalSymbol, arg : Unit) : Boolean =
-      pred(p.normalsymbolt_)
-    override def visit(p : QuotedSymbol, arg : Unit) : Boolean =
-      pred(p.quotedsymbolt_)
   }
 
   val ContainsFillVisitor =

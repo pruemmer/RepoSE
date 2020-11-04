@@ -134,4 +134,44 @@ object ASTMatchers {
     def unapply(cmd : AssertCommand) : scala.Option[Term] = Some(cmd.term_)
   }
 
+    abstract class FindDataVisitor[Data]
+           extends FoldVisitor[SOption[Data], Unit] {
+    def apply(cmd : Command) : SOption[Data] = cmd.accept(this, ())
+    def leaf(arg : Unit) = None
+    def combine(x : SOption[Data], y : SOption[Data], arg : Unit) = x orElse y
+  }
+
+  object FindSymbolVisitor {
+    def apply[Data](cmd : Command)
+                   (pred : String => SOption[Data]) : SOption[Data] =
+      (new FindSymbolVisitor(pred))(cmd)
+  }
+
+  class FindSymbolVisitor[Data](pred : String => SOption[Data])
+        extends FindDataVisitor[Data] {
+    override def visit(p : NormalSymbol, arg : Unit) : SOption[Data] =
+      pred(p.normalsymbolt_)
+    override def visit(p : QuotedSymbol, arg : Unit) : SOption[Data] =
+      pred(p.quotedsymbolt_.substring(1, p.quotedsymbolt_.size - 1))
+  }
+
+  object ContainsSymbolVisitor {
+    def apply(cmd : Command)(pred : String => Boolean) : Boolean =
+      (new ContainsSymbolVisitor(pred))(cmd)
+  }
+
+  class ContainsSymbolVisitor(pred : String => Boolean)
+        extends FoldVisitor[Boolean, Unit] {
+    def apply(cmd : Command) : Boolean =
+      cmd.accept(this, ())
+
+    def leaf(arg : Unit) = false
+    def combine(x : Boolean, y : Boolean, arg : Unit) = x || y
+
+    override def visit(p : NormalSymbol, arg : Unit) : Boolean =
+      pred(p.normalsymbolt_)
+    override def visit(p : QuotedSymbol, arg : Unit) : Boolean =
+      pred(p.quotedsymbolt_.substring(1, p.quotedsymbolt_.size - 1))
+  }
+
 }
