@@ -8,20 +8,23 @@ import nd._
 
 import scala.{Option => SOption}
 import scala.collection.JavaConverters._
+import scala.collection.mutable.{HashSet => MHashSet, Set => MSet}
 
 object FallBackRecoder extends BacktrackingSearch {
   import ASTMatchers._
   import Constants._
 
   def apply(cmds : Seq[Command]) : Seq[Command] = {
-    var num     = 0
-    var curCmds = cmds
+    var num            = 0
+    var curCmds        = cmds
+    val coveredIndexes = new MHashSet[String]
 
-    var cont    = true
+    var cont           = true
     while (cont)
-      findOccurrence(curCmds) match {
+      findOccurrence(curCmds, coveredIndexes) match {
         case Some(occ) => {
           curCmds = recode(curCmds, occ, num)
+          coveredIndexes += occ.fillNameIndex
           num = num + 1
         }
         case None =>
@@ -54,7 +57,8 @@ object FallBackRecoder extends BacktrackingSearch {
       case _ => false
     }
 
-  def findOccurrence(cmds : Seq[Command]) : SOption[MatchOcc] =
+  def findOccurrence(cmds : Seq[Command],
+                     coveredIndexes : MSet[String]) : SOption[MatchOcc] =
     search[MatchOcc] {
       chooseInt(0 until cmds.size) { start =>
         assume(cmds(start).isInstanceOf[AssertCommand])
@@ -64,6 +68,12 @@ object FallBackRecoder extends BacktrackingSearch {
             case FillVarName(num1, "0") => Some(num1)
             case _                      => None
           }
+        }
+
+        assume(!(coveredIndexes contains FillNameIndex))
+
+        assumeForall(0 until cmds.size) {
+          ind => cmds(ind) != markerAssertion(FillNameIndex)
         }
 
         def containsFill(ind : Int) = {
@@ -78,7 +88,6 @@ object FallBackRecoder extends BacktrackingSearch {
 
         chooseInt((start + 1) until cmds.size) { end =>
           assumeForall(start to end) { ind => containsFill(ind) }
-          assumeForall(start to end) { ind => cmds(ind) != MarkerAssertion }
 
           assume(end + 1 >= cmds.size || !containsFill(end + 1))
 

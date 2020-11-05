@@ -11,13 +11,15 @@ import scala.collection.JavaConverters._
 
 object Constants {
 
-  val FillVarName   = """([0-9]+) Fill ([0-9]+)""".r
-  val MatchFlagName = """IsMatch_/(.+)/_([0-9]+)""".r
+  val FillVarName        = """([0-9]+) Fill ([0-9]+)""".r
+  val MatchFlagName      = """IsMatch_/(.+)/_([0-9]+)""".r
 
-  val fillVarName = " Fill "
+  val fillVarName        = " Fill "
+  val EncodingMarkerName = """EncodingMarker_[0-9]+""".r
 
   import ASTMatchers._
-  val MarkerAssertion = AssertCmd(PlainApp("EncodingMarker"))
+  def markerAssertion(num : String) =
+    AssertCmd(PlainApp("EncodingMarker_" + num))
 
 }
 
@@ -51,20 +53,21 @@ object MatchRecoder extends BacktrackingSearch {
                       matchInd : Int,
                       regex : String,
                       stringVar : String,
-                      cgVars : Seq[String])
+                      cgVars : Seq[String],
+                      fillNameIndex : String)
 
   def recode(cmds : Seq[Command], occ : MatchOcc, num : Int) : Seq[Command] = {
-    val MatchOcc(startInd, membershipInd, concatInd, _,
-                 regex, stringVar, cpVars) = occ
+    import occ._
     val (transducerFuns, transducerDefs) = Reg2PT(regex, "MatchTD_" + num + "_")
-    assert(transducerFuns.size == cpVars.size)
+    assert(transducerFuns.size == cgVars.size)
     var newCmds = cmds
     val transducerApps =
-      for ((cpVar, tdFun) <- cpVars zip transducerFuns)
-      yield AssertCmd(PlainApp(tdFun, PlainApp(stringVar), PlainApp(cpVar)))
+      for ((cgVar, tdFun) <- cgVars zip transducerFuns)
+      yield AssertCmd(PlainApp(tdFun, PlainApp(stringVar), PlainApp(cgVar)))
 
     newCmds = newCmds.patch(concatInd, transducerApps, 1)
-    newCmds = newCmds.patch(startInd, List(), membershipInd - startInd)
+    newCmds = newCmds.patch(startInd, List(markerAssertion(fillNameIndex)),
+                            membershipInd - startInd)
 
     Transducers.addTransducers(newCmds, transducerDefs)
   }
@@ -75,6 +78,7 @@ object MatchRecoder extends BacktrackingSearch {
         val startCmd = cmds(start)
         assume(startCmd.isInstanceOf[AssertCommand])
 
+        // constraints use the |n Fill m| variables
         val FillNameIndex = assumeIsDefined {
           FindSymbolVisitor(startCmd) {
             case FillVarName(num1, "0") => Some(num1)
@@ -82,6 +86,8 @@ object MatchRecoder extends BacktrackingSearch {
           }
         }
 
+        // the |n Fill m| variables with this index do not
+        // occur before the considered constraints
         assumeForall(0 until start) { ind =>
           !(cmds(ind).isInstanceOf[AssertCommand] &&
               ContainsSymbolVisitor(cmds(ind)) {
@@ -90,6 +96,7 @@ object MatchRecoder extends BacktrackingSearch {
               })
         }
 
+        // identify the |IsMatch_regex| flag
         val (matchInd, regex) =
           findMinInt[(Int, String)]((start + 1) until cmds.size) { end =>
             val regex = assumeIsDefined {
@@ -103,6 +110,16 @@ object MatchRecoder extends BacktrackingSearch {
             success((end, regex))
           }
 
+        // there is only one occurrence of the |IsMatch_regex| flag 
+        assumeForall(start until matchInd) { ind =>
+          !(ContainsSymbolVisitor(cmds(ind)) {
+              case MatchFlagName(`regex`, "0") => true
+              case _ => false
+            })
+        }
+
+        // there is an equation in which the main variable is decomposed
+        // into multiple string variables, corresponding to the capture groups
         chooseInt(start until matchInd) { concatInd =>
           val (mainVar, groups) = assumeIsDefined {
             cmds(concatInd) match {
@@ -120,7 +137,7 @@ object MatchRecoder extends BacktrackingSearch {
           }
 
           success(MatchOcc(start, concatInd - 1, concatInd, matchInd, regex,
-                           mainVar, groups))
+                           mainVar, groups, FillNameIndex))
         }
       }
     }

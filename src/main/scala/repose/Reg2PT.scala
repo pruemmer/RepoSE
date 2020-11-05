@@ -27,7 +27,7 @@ object Reg2PT {
       case 0 => {
         val allCmds = Parsing.parseString(output.toString)
         val cmds    = allCmds filter (_.isInstanceOf[RecFunctionDefsCommand])
-        (for (n <- 1 to cmds.size) yield (prefix + n + "main"), cmds)
+        ((for (n <- 1 to cmds.size) yield (prefix + n + "main")).reverse, cmds)
       }
       case err =>
         throw new Exception("reg2pt failed, exit value " + err)
