@@ -47,29 +47,56 @@ object MatchRecoder extends BacktrackingSearch {
 
   val printer = new PrettyPrinterNonStatic
 
-  case class MatchOcc(startInd : Int,
+  case class MatchOcc(startInd      : Int,
                       membershipInd : Int,
-                      concatInd : Int,
-                      matchInd : Int,
-                      regex : String,
-                      stringVar : String,
-                      cgVars : Seq[String],
+                      concatInd     : Int,
+                      matchInd      : Int,
+                      regex         : String,
+                      stringVar     : String,
+                      cgVars        : Seq[String],
                       fillNameIndex : String)
 
   def recode(cmds : Seq[Command], occ : MatchOcc, num : Int) : Seq[Command] = {
     import occ._
-    val (transducerFuns, transducerDefs) = Reg2PT(regex, "MatchTD_" + num + "_")
-    assert(transducerFuns.size == cgVars.size)
-    var newCmds = cmds
-    val transducerApps =
-      for ((cgVar, tdFun) <- cgVars zip transducerFuns)
-      yield AssertCmd(PlainApp(tdFun, PlainApp(stringVar), PlainApp(cgVar)))
 
-    newCmds = newCmds.patch(concatInd, transducerApps, 1)
-    newCmds = newCmds.patch(startInd, List(markerAssertion(fillNameIndex)),
-                            membershipInd - startInd)
+    Options.matchEncoding match {
+      case Options.MatchEncoding.PrioTransducer => {
+        val (transducerFuns, transducerDefs) =
+          Reg2PT(regex, "MatchTD_" + num + "_")
+        assert(transducerFuns.size == cgVars.size)
+        var newCmds = cmds
+        val transducerApps =
+          for ((cgVar, tdFun) <- cgVars zip transducerFuns)
+          yield AssertCmd(PlainApp(tdFun, PlainApp(stringVar), PlainApp(cgVar)))
 
-    Transducers.addTransducers(newCmds, transducerDefs)
+        newCmds = newCmds.patch(concatInd, transducerApps, 1)
+        newCmds = newCmds.patch(startInd, List(markerAssertion(fillNameIndex)),
+                                membershipInd - startInd)
+
+        Transducers.addTransducers(newCmds, transducerDefs)
+      }
+
+      case Options.MatchEncoding.RegexTerm => {
+        val regexTerm = Reg2SMT(regex)
+        var newCmds = cmds
+
+        val regexVar = "re!1"
+        val extractors =
+          for ((cgVar, n) <- cgVars.zipWithIndex)
+          yield PlainApp("=",
+                         PlainApp(cgVar),
+                         FunApp(IndexedSymbol("str.extract", (n+1).toString),
+                                PlainApp(stringVar), PlainApp(regexVar)))
+        val extractorConj =
+          AssertCmd(Let(PlainApp("and", extractors : _*),(regexVar, regexTerm)))
+
+        newCmds = newCmds.patch(concatInd, List(extractorConj), 1)
+        newCmds = newCmds.patch(startInd, List(markerAssertion(fillNameIndex)),
+                                membershipInd - startInd)
+
+        newCmds
+      }
+    }
   }
 
   def findOccurrence(cmds : Seq[Command]) : SOption[MatchOcc] =

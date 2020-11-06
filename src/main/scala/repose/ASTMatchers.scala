@@ -20,6 +20,15 @@ object ASTMatchers {
   import scala.collection.JavaConversions.{asScalaBuffer, asScalaIterator}
 
   object FunApp {
+    def apply(f : SymbolRef, args : Term*) : Term =
+      if (args.isEmpty) {
+        new NullaryTerm(f)
+      } else {
+        val termArgs = new ListTerm()
+        for (a <- args)
+          termArgs.add(a)
+        new FunctionTerm(f, termArgs)
+      }
     def unapplySeq(r : Term) : SOption[(SymbolRef, Seq[Term])] = r match {
       case r : FunctionTerm =>
         Some((r.symbolref_, r.listterm_))
@@ -32,14 +41,7 @@ object ASTMatchers {
 
   object PlainApp {
     def apply(f : String, args : Term*) : Term =
-      if (args.isEmpty) {
-        new NullaryTerm(PlainSymbol(f))
-      } else {
-        val termArgs = new ListTerm()
-        for (a <- args)
-          termArgs.add(a)
-        new FunctionTerm(PlainSymbol(f), termArgs)
-      }
+      FunApp(PlainSymbol(f), args : _*)
     def unapplySeq(r : Term) : SOption[(String, Seq[Term])] = r match {
       case FunApp(PlainSymbol(str), rest @ _*) => Some(str, rest)
       case _ => None
@@ -63,9 +65,20 @@ object ASTMatchers {
     }
   }
 
-  object Assert {
-    def unapply(r : AssertCommand) : SOption[Term] = {
-      Some((r.term_))
+  object Let {
+    def apply(t : Term, bindings : (String, Term)*) : LetTerm = {
+      val binds = new ListBindingC
+      for ((s, t) <- bindings)
+        binds.add(new Binding(new NormalSymbol(s), t))
+      new LetTerm(binds, t)
+    }
+    def unapplySeq(r : LetTerm) : SOption[(Term, Seq[(String, Term)])] = {
+      Some((r.term_,
+            for (b <- r.listbindingc_) yield {
+              val bind = b.asInstanceOf[Binding]
+              val s = bind.symbol_.asInstanceOf[NormalSymbol].normalsymbolt_
+              (s, bind.term_)
+            }))
     }
   }
 
@@ -98,6 +111,17 @@ object ASTMatchers {
   }
   
   object IndexedSymbol {
+    def apply(s : String, indexes : String*) : SymbolRef = {
+      val indexList = new ListIndexC
+      for (ind <- indexes)
+        indexList.add(new Index(ind))
+      quoteIdentifier(s) match {
+        case `s` =>
+          new IdentifierRef(new IndexIdent(new NormalSymbol(s), indexList))
+        case qs =>
+          new IdentifierRef(new IndexIdent(new QuotedSymbol(qs), indexList))
+      }
+    }
     def unapplySeq(s : SymbolRef) : scala.Option[Seq[String]] = s match {
       case s : IdentifierRef => IndexedIdentifier unapplySeq s.identifier_
       case _ => None

@@ -7,8 +7,6 @@ import ap.parser.smtlib.Absyn._
 import sys.process._
 
 object Reg2PT {
-  val printer = new PrettyPrinterNonStatic
-
   def reg2PTCommand(regex : String, prefix : String) = {
     val executable =
       sys.env.get("BASEDIR") match {

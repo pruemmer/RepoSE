@@ -37,4 +37,13 @@ object Parsing {
     p.pScriptC.asInstanceOf[Script].listcommand_
   }
 
+  def parseExpression(input : String) : Term = {
+    parseString("(ignore " + input + ")") match {
+      case Seq(cmd : IgnoreCommand) =>
+        cmd.term_
+      case _ =>
+        throw new Exception("Parsing of expression failed")
+    }
+  }
+
 }
