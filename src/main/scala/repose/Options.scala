@@ -9,4 +9,6 @@ object Options {
 
   var matchEncoding : MatchEncoding.Value = MatchEncoding.PrioTransducer
 
+  var filenameSuffix : String = "processed"
+
 }

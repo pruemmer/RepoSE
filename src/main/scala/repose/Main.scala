@@ -3,6 +3,8 @@ package repose;
 
 object Main {
 
+  val SuffixOption = """-suffix=([^ ]*)""".r
+
   def main(args: Array[String]) : Unit = {
     val trans = new Transformer
     for (argument <- args)
@@ -12,8 +14,10 @@ object Main {
             Options.matchEncoding = Options.MatchEncoding.PrioTransducer
           case "-matchEncoding=regexTerm" =>
             Options.matchEncoding = Options.MatchEncoding.RegexTerm
+          case SuffixOption(suffix) =>
+            Options.filenameSuffix = suffix
           case inputFile => {
-            val outputFile = inputFile + "-processed.smt2"
+            val outputFile = inputFile + "-" + Options.filenameSuffix + ".smt2"
             trans.transform(inputFile, outputFile)
           }
         }
