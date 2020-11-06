@@ -169,4 +169,7 @@ object MatchRecoder extends BacktrackingSearch {
       }
     }
 
+  def massageRegex(regex : String) : String =
+    regex
+
 }
