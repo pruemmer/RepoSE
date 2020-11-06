@@ -163,13 +163,15 @@ object MatchRecoder extends BacktrackingSearch {
             }
           }
 
-          success(MatchOcc(start, concatInd - 1, concatInd, matchInd, regex,
+          success(MatchOcc(start, concatInd - 1, concatInd, matchInd,
+                           massageRegex(regex),
                            mainVar, groups, FillNameIndex))
         }
       }
     }
 
   def massageRegex(regex : String) : String =
-    regex
+    // unescape \\
+    regex.replaceAll("\\x5C\\x5C", """\\""")
 
 }
