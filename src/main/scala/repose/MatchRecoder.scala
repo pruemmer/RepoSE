@@ -147,38 +147,118 @@ object MatchRecoder extends BacktrackingSearch {
             success((end, regex))
           }
 
-        // there is only one occurrence of the |IsMatch_regex| flag 
-        assumeForall(start until matchInd) { ind =>
-          !(ContainsSymbolVisitor(cmds(ind)) {
-              case MatchFlagName(`regex`, "0") => true
-              case _ => false
-            })
-        }
+        def matchOcc(cmd : Command) =
+          ContainsSymbolVisitor(cmd) {
+            case MatchFlagName(`regex`, "0") => true
+            case _ => false
+          }
 
-        // there is an equation in which the main variable is decomposed
-        // into multiple string variables, corresponding to the capture groups
-        chooseInt(start until matchInd) { concatInd =>
-          val (mainVar, groups) = assumeIsDefined {
-            cmds(concatInd) match {
-              case AssertCmd(PlainApp("=",
-                                      PlainApp(mainVar),
-                                      PlainApp("str.++", rawGroups @ _*))) => {
-                val groups =
-                  for (PlainApp(s@FillVarName(FillNameIndex, _)) <- rawGroups)
-                  yield s
-                Some((mainVar, groups))
+        alternatives(2) {
+          case 0 => {
+            // there is only one occurrence of the |IsMatch_regex| flag
+            assumeForall(start until matchInd) {
+              ind => !matchOcc(cmds(ind))
+            }
+
+            // there is an equation in which the main variable is decomposed
+            // into multiple string variables, corresponding to the capture
+            // groups
+            chooseInt(start until matchInd) { concatInd =>
+              val (mainVar, groups) = assumeIsDefined {
+                cmds(concatInd) match {
+                  case AssertCmd(PlainApp("=",
+                                          PlainApp(mainVar),
+                                          PlainApp("str.++", rawGroups @ _*))) => {
+                    val groups =
+                      for (PlainApp(s@FillVarName(FillNameIndex, _)) <- rawGroups)
+                      yield s
+                    Some((mainVar, groups))
+                  }
+                  case _ =>
+                    None
+                }
               }
-              case _ =>
-                None
+
+              success(MatchOcc(start, concatInd - 1, concatInd, matchInd,
+                               massageRegex(regex),
+                               mainVar, groups, FillNameIndex))
             }
           }
 
-          success(MatchOcc(start, concatInd - 1, concatInd, matchInd,
-                           massageRegex(regex),
-                           mainVar, groups, FillNameIndex))
+          case 1 => chooseInt(start until matchInd) { matchDefInd =>
+            val (mainVar, regexTerm) = assumeIsDefined(
+              cmds(matchDefInd) match {
+                case AssertCmd(
+                  PlainApp("=",
+                           PlainApp("str.in.re", PlainApp(mainVar), regexTerm),
+                           PlainApp(MatchFlagName(`regex`, "0")))) =>
+                  Some((mainVar, regexTerm))
+                case _ =>
+                  None
+              })
+
+            // the |IsMatch_regex| flag has been used
+            // only at the definition point
+            assumeForall(start until matchDefInd) {
+              ind => ind == matchDefInd || !matchOcc(cmds(ind))
+            }
+
+            // there is an equation in which the main variable is decomposed
+            // into multiple string variables, corresponding to the capture
+            // groups
+            chooseInt(start until matchInd) { concatInd =>
+              val groups = assumeIsDefined {
+                cmds(concatInd) match {
+                  case AssertCmd(
+                    Let(
+                      PlainApp("or",
+                               PlainApp(var1Use),
+                               PlainApp("=",
+                                        PlainApp(mainVar),
+                                        PlainApp(s@FillVarName(FillNameIndex, _)))),
+                      (var1,
+                       PlainApp("not",
+                                PlainApp("str.in.re",
+                                         PlainApp(`mainVar`), `regexTerm`)))))
+                      if var1 == var1Use => {
+                    Some(List(s))
+                  }
+                  case _ =>
+                    None
+                }
+              }
+
+              success(MatchOcc(start, concatInd - 1, concatInd, matchInd,
+                               massageRegex(regex),
+                               mainVar, groups, FillNameIndex))
+            }
+          }
         }
       }
     }
+
+/*
+  class CaptureGroupEquation(FillNameIndex : String) {
+    def unapply(t : Term) : SOption[(String, Seq[String])] = t match {
+      case PlainApp("=",
+                    PlainApp(mainVar),
+                    PlainApp("str.++", rawGroups @ _*)) => {
+        val groups =
+          for (PlainApp(s@FillVarName(FillNameIndex, _)) <- rawGroups)
+          yield s
+        Some((mainVar, groups))
+      }
+      case PlainApp("=",
+                    PlainApp(mainVar),
+                    PlainApp(s@FillVarName(FillNameIndex, _))) =>
+        Some((mainVar, List(s)))
+      case _ =>
+        None
+    }
+  }
+ */
+
+  //////////////////////////////////////////////////////////////////////////////
 
   def massageRegex(regex : String) : String = {
     // unescape \\ and \|

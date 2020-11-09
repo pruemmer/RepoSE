@@ -54,8 +54,19 @@ trait NDSearch {
   def chooseInt(r : Range)(comp : Int => Unit) : Unit
 
   /**
+   * Mark that computation at this point can take <code>n</code> alternative
+   * paths. <code>comp</comp> will usually be written as a <code>match</code>
+   * block.
+   */
+  def alternatives(n : Int)(comp : Int => Unit) : Unit =
+    chooseInt(0 until n)(comp)
+
+  /**
    * Recursively start a non-deterministic computation to find some
-   * integer for which a computation succeeds.
+   * integer for which a computation succeeds. This method can be
+   * used to control back-tracking, similarly as a cut in Prolog, since
+   * choice points within the computation will be discarded once the first
+   * result has been found.
    */
   def findInt[Result](r : Range)(comp : Int => Unit) : Result =
     find[Result] { chooseInt(r)(comp) }
