@@ -123,6 +123,8 @@ object MatchRecoder extends BacktrackingSearch {
           }
         }
 
+        val CGEquation = new CaptureGroupEquation(FillNameIndex)
+
         // the |n Fill m| variables with this index do not
         // occur before the considered constraints
         assumeForall(0 until start) { ind =>
@@ -213,16 +215,13 @@ object MatchRecoder extends BacktrackingSearch {
                     Let(
                       PlainApp("or",
                                PlainApp(var1Use),
-                               PlainApp("=",
-                                        PlainApp(mainVar),
-                                        PlainApp(s@FillVarName(FillNameIndex, _)))),
+                               CGEquation(`mainVar`, groups)),
                       (var1,
                        PlainApp("not",
                                 PlainApp("str.in.re",
                                          PlainApp(`mainVar`), `regexTerm`)))))
-                      if var1 == var1Use => {
-                    Some(List(s))
-                  }
+                      if var1 == var1Use =>
+                    Some(groups)
                   case _ =>
                     None
                 }
@@ -237,7 +236,6 @@ object MatchRecoder extends BacktrackingSearch {
       }
     }
 
-/*
   class CaptureGroupEquation(FillNameIndex : String) {
     def unapply(t : Term) : SOption[(String, Seq[String])] = t match {
       case PlainApp("=",
@@ -256,7 +254,6 @@ object MatchRecoder extends BacktrackingSearch {
         None
     }
   }
- */
 
   //////////////////////////////////////////////////////////////////////////////
 
