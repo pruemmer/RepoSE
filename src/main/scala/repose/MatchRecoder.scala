@@ -61,9 +61,14 @@ object MatchRecoder extends BacktrackingSearch {
 
     Options.matchEncoding match {
       case Options.MatchEncoding.PrioTransducer => {
+        val (preTransducerFuns, preTransducerDefs) = Reg2PT(regex, "MatchTD_" + num + "_")
+
         val (transducerFuns, transducerDefs) =
-          Reg2PT(regex, "MatchTD_" + num + "_")
-        assert(transducerFuns.size == cgVars.size)
+          (cgVars.size - preTransducerFuns.size) match {
+            case 0 => (preTransducerFuns, preTransducerDefs)
+            case 2 => Reg2PT("(.*?)" + regex + "(.*)", "MatchTD_" + num + "_")
+          }
+
         var newCmds = cmds
         val transducerApps =
           for ((cgVar, tdFun) <- cgVars zip transducerFuns)
@@ -72,6 +77,11 @@ object MatchRecoder extends BacktrackingSearch {
         newCmds = newCmds.patch(concatInd, transducerApps, 1)
         newCmds = newCmds.patch(startInd, List(markerAssertion(fillNameIndex)),
                                 membershipInd - startInd)
+
+        if (cgVars.size == preTransducerFuns.size + 2) {
+          val visitor = new SubstringReplacer(cgVars.head, stringVar, cgVars.last)
+          newCmds = newCmds map (_.accept(visitor, ()))
+        }
 
         Transducers.addTransducers(newCmds, transducerDefs)
       }
@@ -170,8 +180,107 @@ object MatchRecoder extends BacktrackingSearch {
       }
     }
 
-  def massageRegex(regex : String) : String =
-    // unescape \\
+  def massageRegex(regex : String) : String = {
+    // unescape \\ and \|
     regex.replaceAll("\\x5C\\x5C", """\\""")
+         .replaceAll("\\x5C\\x7C", "|")
+  }
+
+  // TODO: need to visit the children first?
+  class SubstringReplacer(PrefixName  : String,
+                          MainVarName : String,
+                          SuffixName  : String) extends ComposVisitor[Unit] {
+
+    override def visit(p : LetTerm, arg : Unit) : Term = p match {
+      case Let(Let(Let(innerTerm,
+            // (let ((a!5 (ite (<= (+ (str.len X) (* (- 1) a!4)) 0)
+            //                 ""
+            //                 (str.substr X a!4 (+ (str.len X) (* (- 1) a!4))))))
+            (var5,
+             PlainApp("ite",
+                      PlainApp("<=",
+                               PlainApp("+",
+                                        PlainApp("str.len", PlainApp(MainVarName)),
+                                        PlainApp("*", IntLit(-1), PlainApp(var4Use1))),
+                               IntLit(0)),
+                      StringLit(""),
+                      PlainApp("str.substr",
+                               PlainApp(MainVarName),
+                               PlainApp(var4Use2),
+                               PlainApp("+",
+                                        PlainApp("str.len", PlainApp(MainVarName)),
+                                        PlainApp("*", IntLit(-1), PlainApp(var4Use3))))))),
+            // (let ((a!2 (ite (<= (str.len X) 0)
+            //            ""
+            //            (str.substr X 0 (ite a!1 (str.len X) (str.len |0 Fill 3|)))))
+            (var2,
+             PlainApp("ite",
+                      PlainApp("<=",
+                               PlainApp("str.len", PlainApp(MainVarName)),
+                               IntLit(0)),
+                      StringLit(""),
+                      PlainApp("str.substr",
+                               PlainApp(MainVarName),
+                               IntLit(0),
+                               PlainApp("ite",
+                                        PlainApp(var1Use1),
+                                        PlainApp("str.len", PlainApp(MainVarName)),
+                                        PlainApp("str.len", PlainApp(PrefixName)))))),
+            // (a!4 (ite (>= (+ (str.len |0 Fill 3|) (str.len |0 Fill 2|)) 0)
+            //           (+ (str.len |0 Fill 3|) (str.len |0 Fill 2|))
+            //           a!3)))
+            (var4, var4Def @
+             PlainApp("ite",
+                      PlainApp(">=",
+                               PlainApp("+",
+                                        PlainApp("str.len", PlainApp(PrefixName)),
+                                        rest3 @ _*),
+                               IntLit(0)),
+                      PlainApp("+",
+                               PlainApp("str.len", PlainApp(PrefixName)),
+                               rest4 @ _*),
+                      PlainApp(var3Use1)))),
+        // (a!1 (>= (+ (str.len |0 Fill 3|) (* (- 1) (str.len X))) 0))
+        (var1, var1Def @
+           PlainApp(">=",
+                    PlainApp("+",
+                             PlainApp("str.len", PlainApp(PrefixName)),
+                             PlainApp("*",
+                                      IntLit(-1),
+                                      PlainApp("str.len", PlainApp(MainVarName)))),
+                    IntLit(0))),
+        // (a!3 (ite (>= (+ (str.len |0 Fill 3|) (str.len X) (str.len |0 Fill 2|)) 0)
+        //           (+ (str.len |0 Fill 3|) (str.len X) (str.len |0 Fill 2|))
+        //           0))
+        (var3, var3Def @
+         PlainApp("ite",
+                  PlainApp(">=",
+                           PlainApp("+",
+                                    PlainApp("str.len", PlainApp(PrefixName)),
+                                    PlainApp("str.len", PlainApp(MainVarName)),
+                                    rest1 @ _*),
+                           IntLit(0)),
+                  PlainApp("+",
+                           PlainApp("str.len", PlainApp(PrefixName)),
+                           PlainApp("str.len", PlainApp(MainVarName)),
+                           rest2 @ _*),
+                  IntLit(0))))
+
+        if rest1 == rest2 && rest3 == rest4 &&
+           var1Use1 == var1 && var3Use1 == var3 && var4Use1 == var4 &&
+           var4Use2 == var4 && var4Use3 == var4 =>
+
+         Let(Let(Let(innerTerm,
+                     (var5, PlainApp(SuffixName))),
+                 (var2, PlainApp(PrefixName)),
+                 (var4, var4Def)),
+             (var1, var1Def),
+             (var3, var3Def))
+
+      case _ =>
+        super.visit(p, arg)
+    }
+
+  }
 
 }

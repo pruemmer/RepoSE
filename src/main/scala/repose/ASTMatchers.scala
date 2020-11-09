@@ -49,12 +49,29 @@ object ASTMatchers {
   }
 
   object IntLit {
+    def apply(n : Int) : Term =
+      if (n < 0)
+        PlainApp("-", new ConstantTerm (new NumConstant ((-n).toString)))
+      else
+        new ConstantTerm (new NumConstant (n.toString))
+
     def unapply(t : AnyRef) : SOption[Int] = t match {
       case t : ConstantTerm  => t.specconstant_ match {
         case c : NumConstant => Some(c.numeral_.toInt)
         case _ => None
       }
       case PlainApp("-", IntLit(v)) => Some(-v)
+      case _ => None
+    }
+  }
+
+  object StringLit {
+    def unapply(t : ConstantTerm) : SOption[String] = t match {
+      case t : ConstantTerm  => t.specconstant_ match {
+        case c : StringConstant =>
+          Some(c.smtstring_.substring(1, c.smtstring_.length - 1))
+        case _ => None
+      }
       case _ => None
     }
   }

@@ -115,6 +115,7 @@ class RecFunElim extends ComposVisitor[Unit] {
     }
   }
 
+  // TODO: need to visit the children first?
   override def visit(p : FunctionTerm, arg : Unit) : Term = {
     p match {
       case PlainApp("str.substr",
