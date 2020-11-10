@@ -8,7 +8,6 @@ import scala.{Option => SOption}
 import scala.collection.JavaConverters._
 
 object LetInliner {
-  val printer = new PrettyPrinterNonStatic
   import ASTMatchers._
 
   // TODO: apply until a fixed-point is reached?
@@ -48,7 +47,6 @@ object LetInliner {
           if (subst.isEmpty) {
             p
           } else {
-            println(subst)
             val newInner = inner.accept(new Inliner (subst), ())
             (for ((v, t) <- defs; if !(subst contains v)) yield (v, t)) match {
               case Seq() => newInner
