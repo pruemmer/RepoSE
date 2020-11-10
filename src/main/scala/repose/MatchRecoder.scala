@@ -212,15 +212,11 @@ object MatchRecoder extends BacktrackingSearch {
               val groups = assumeIsDefined {
                 cmds(concatInd) match {
                   case AssertCmd(
-                    Let(
                       PlainApp("or",
-                               PlainApp(var1Use),
-                               CGEquation(`mainVar`, groups)),
-                      (var1,
-                       PlainApp("not",
-                                PlainApp("str.in.re",
-                                         PlainApp(`mainVar`), `regexTerm`)))))
-                      if var1 == var1Use =>
+                               PlainApp("not",
+                               PlainApp("str.in.re",
+                                        PlainApp(`mainVar`), `regexTerm`)),
+                               CGEquation(`mainVar`, groups))) =>
                     Some(groups)
                   case _ =>
                     None
@@ -268,46 +264,9 @@ object MatchRecoder extends BacktrackingSearch {
                           MainVarName : String,
                           SuffixName  : String) extends ComposVisitor[Unit] {
 
-    override def visit(p : LetTerm, arg : Unit) : Term = p match {
-      case Let(Let(Let(innerTerm,
-            // (let ((a!5 (ite (<= (+ (str.len X) (* (- 1) a!4)) 0)
-            //                 ""
-            //                 (str.substr X a!4 (+ (str.len X) (* (- 1) a!4))))))
-            (var5,
-             PlainApp("ite",
-                      PlainApp("<=",
-                               PlainApp("+",
-                                        PlainApp("str.len", PlainApp(MainVarName)),
-                                        PlainApp("*", IntLit(-1), PlainApp(var4Use1))),
-                               IntLit(0)),
-                      StringLit(""),
-                      PlainApp("str.substr",
-                               PlainApp(MainVarName),
-                               PlainApp(var4Use2),
-                               PlainApp("+",
-                                        PlainApp("str.len", PlainApp(MainVarName)),
-                                        PlainApp("*", IntLit(-1), PlainApp(var4Use3))))))),
-            // (let ((a!2 (ite (<= (str.len X) 0)
-            //            ""
-            //            (str.substr X 0 (ite a!1 (str.len X) (str.len |0 Fill 3|)))))
-            (var2,
-             PlainApp("ite",
-                      PlainApp("<=",
-                               PlainApp("str.len", PlainApp(MainVarName)),
-                               IntLit(0)),
-                      StringLit(""),
-                      PlainApp("str.substr",
-                               PlainApp(MainVarName),
-                               IntLit(0),
-                               PlainApp("ite",
-                                        PlainApp(var1Use1),
-                                        PlainApp("str.len", PlainApp(MainVarName)),
-                                        PlainApp("str.len", PlainApp(PrefixName)))))),
-            // (a!4 (ite (>= (+ (str.len |0 Fill 3|) (str.len |0 Fill 2|)) 0)
-            //           (+ (str.len |0 Fill 3|) (str.len |0 Fill 2|))
-            //           a!3)))
-            (var4, var4Def @
-             PlainApp("ite",
+    object Var4Def {
+      def unapply(t : Term) : Boolean = t match {
+        case  PlainApp("ite",
                       PlainApp(">=",
                                PlainApp("+",
                                         PlainApp("str.len", PlainApp(PrefixName)),
@@ -316,46 +275,63 @@ object MatchRecoder extends BacktrackingSearch {
                       PlainApp("+",
                                PlainApp("str.len", PlainApp(PrefixName)),
                                rest4 @ _*),
-                      PlainApp(var3Use1)))),
-        // (a!1 (>= (+ (str.len |0 Fill 3|) (* (- 1) (str.len X))) 0))
-        (var1, var1Def @
-           PlainApp(">=",
-                    PlainApp("+",
-                             PlainApp("str.len", PlainApp(PrefixName)),
-                             PlainApp("*",
-                                      IntLit(-1),
-                                      PlainApp("str.len", PlainApp(MainVarName)))),
-                    IntLit(0))),
-        // (a!3 (ite (>= (+ (str.len |0 Fill 3|) (str.len X) (str.len |0 Fill 2|)) 0)
-        //           (+ (str.len |0 Fill 3|) (str.len X) (str.len |0 Fill 2|))
-        //           0))
-        (var3, var3Def @
-         PlainApp("ite",
-                  PlainApp(">=",
-                           PlainApp("+",
-                                    PlainApp("str.len", PlainApp(PrefixName)),
-                                    PlainApp("str.len", PlainApp(MainVarName)),
-                                    rest1 @ _*),
-                           IntLit(0)),
-                  PlainApp("+",
-                           PlainApp("str.len", PlainApp(PrefixName)),
-                           PlainApp("str.len", PlainApp(MainVarName)),
-                           rest2 @ _*),
-                  IntLit(0))))
+                      PlainApp("ite",
+                               PlainApp(">=",
+                                        PlainApp("+",
+                                                 PlainApp("str.len", PlainApp(PrefixName)),
+                                                 PlainApp("str.len", PlainApp(MainVarName)),
+                                                 rest1 @ _*),
+                                        IntLit(0)),
+                               PlainApp("+",
+                                        PlainApp("str.len", PlainApp(PrefixName)),
+                                        PlainApp("str.len", PlainApp(MainVarName)),
+                                        rest2 @ _*),
+                               IntLit(0)))
+            if rest1 == rest2 && rest3 == rest4 => true
+        case _ => false
+      }
+    }
 
-        if rest1 == rest2 && rest3 == rest4 &&
-           var1Use1 == var1 && var3Use1 == var3 && var4Use1 == var4 &&
-           var4Use2 == var4 && var4Use3 == var4 =>
+    override def visit(p : FunctionTerm, arg : Unit) : Term = p match {
+      case PlainApp("ite",
+                    PlainApp("<=",
+                             PlainApp("str.len", PlainApp(MainVarName)),
+                             IntLit(0)),
+                    StringLit(""),
+                    PlainApp("str.substr",
+                             PlainApp(MainVarName),
+                             IntLit(0),
+                             PlainApp("ite",
+                                      PlainApp(">=",
+                                               PlainApp("+",
+                                                        PlainApp("str.len", PlainApp(PrefixName)),
+                                                        PlainApp("*",
+                                                                 IntLit(-1),
+                                                                 PlainApp("str.len", PlainApp(MainVarName)))),
+                                               IntLit(0)),
+                                      PlainApp("str.len", PlainApp(MainVarName)),
+                                      PlainApp("str.len", PlainApp(PrefixName))))) =>
+        PlainApp(PrefixName)
 
-         Let(Let(Let(innerTerm,
-                     (var5, PlainApp(SuffixName))),
-                 (var2, PlainApp(PrefixName)),
-                 (var4, var4Def)),
-             (var1, var1Def),
-             (var3, var3Def))
+      // (let ((a!5 (ite (<= (+ (str.len X) (* (- 1) a!4)) 0)
+      //                 ""
+      //                 (str.substr X a!4 (+ (str.len X) (* (- 1) a!4))))))
+      case PlainApp("ite",
+                      PlainApp("<=",
+                               PlainApp("+",
+                                        PlainApp("str.len", PlainApp(MainVarName)),
+                                        PlainApp("*", IntLit(-1), Var4Def())),
+                               IntLit(0)),
+                      StringLit(""),
+                      PlainApp("str.substr",
+                               PlainApp(MainVarName),
+                               Var4Def(),
+                               PlainApp("+",
+                                        PlainApp("str.len", PlainApp(MainVarName)),
+                                        PlainApp("*", IntLit(-1), Var4Def())))) =>
+        PlainApp(SuffixName)
 
-      case _ =>
-        super.visit(p, arg)
+      case p => super.visit(p, ())
     }
 
   }

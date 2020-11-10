@@ -20,13 +20,14 @@ class Transformer {
     val script  = Parsing.parseFromFile(inputFile)
     val script2 = OpFixer(script)
     val script3 = RecFunElim(script2)
-    val script4 = MatchRecoder(script3)
-    val script5 = FallBackRecoder(script4)
-    val script6 = QuotedIdSanitizer(script5)
+    val script4 = LetInliner(script3)
+    val script5 = MatchRecoder(script4)
+    val script6 = FallBackRecoder(script5)
+    val script7 = QuotedIdSanitizer(script6)
 
     val out = new java.io.FileOutputStream(outputFile)
     Console.withOut(out) {
-      printLineByLine(script6)
+      printLineByLine(script7)
     }
     out.close
   }
