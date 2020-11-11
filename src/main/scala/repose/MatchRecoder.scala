@@ -59,27 +59,42 @@ object MatchRecoder extends BacktrackingSearch {
   def recode(cmds : Seq[Command], occ : MatchOcc, num : Int) : Seq[Command] = {
     import occ._
 
+    val numCG = Reg2SMT.numCaptureGroups(regex)
+
+    println("Rewriting match: " + occ)
+    println("  Equation: " + (printer print cmds(concatInd)))
+    println("  Capture groups found: " + numCG)
+
     Options.matchEncoding match {
       case Options.MatchEncoding.PrioTransducer => {
-        val (preTransducerFuns, preTransducerDefs) = Reg2PT(regex, "MatchTD_" + num + "_")
-
-        val (transducerFuns, transducerDefs) =
-          (cgVars.size - preTransducerFuns.size) match {
-            case 0 => (preTransducerFuns, preTransducerDefs)
-            case 2 => Reg2PT("(.*?)" + regex + "(.*)", "MatchTD_" + num + "_")
+        val ((transducerFuns, transducerDefs), doReplace, cgVarsToAssign) =
+          (numCG, cgVars.size) match {
+            case (n1, n2) if n1 == n2 =>
+              (Reg2PT(regex, "MatchTD_" + num + "_"),
+               false, cgVars)
+            case (n1, n2) if n2 == n1 + 2 =>
+              (Reg2PT("(.*?)" + regex + "(.*)", "MatchTD_" + num + "_"),
+               true, cgVars)
+            case (0, n) if n >= 2 =>
+              (Reg2PT("(.*?)" + regex + "(.*)", "MatchTD_" + num + "_"),
+               true, List(cgVars.head, cgVars.last))
+            case n =>
+              throw new Exception(
+                "Number of variables and capture groups is inconsistent")
           }
 
         var newCmds = cmds
         val transducerApps =
-          for ((cgVar, tdFun) <- cgVars zip transducerFuns)
+          for ((cgVar, tdFun) <- cgVarsToAssign zip transducerFuns)
           yield AssertCmd(PlainApp(tdFun, PlainApp(stringVar), PlainApp(cgVar)))
 
         newCmds = newCmds.patch(concatInd, transducerApps, 1)
         newCmds = newCmds.patch(startInd, List(markerAssertion(fillNameIndex)),
                                 membershipInd - startInd)
 
-        if (cgVars.size == preTransducerFuns.size + 2) {
-          val visitor = new SubstringReplacer(cgVars.head, stringVar, cgVars.last)
+        if (doReplace) {
+          val visitor =
+            new SubstringReplacer(cgVars.head, stringVar, cgVars.last)
           newCmds = newCmds map (_.accept(visitor, ()))
         }
 
@@ -87,6 +102,10 @@ object MatchRecoder extends BacktrackingSearch {
       }
 
       case Options.MatchEncoding.RegexTerm => {
+        if (cgVars.size != numCG)
+          throw new Exception(
+            "Number of variables and capture groups is inconsistent")
+
         val regexTerm = Reg2SMT(regex)
         var newCmds = cmds
 
@@ -162,19 +181,35 @@ object MatchRecoder extends BacktrackingSearch {
               ind => !matchOcc(cmds(ind))
             }
 
+            // there is a regular membership query defining the string variable
+            val (regexInd, mainVar) =
+              findMaxInt[(Int, String)](start until matchInd) { ind =>
+                val mainVar = assumeIsDefined {
+                  cmds(ind) match {
+                    case AssertCmd(PlainApp("str.in.re",
+                                            PlainApp(mainVar), _)) =>
+                      Some(mainVar)
+                    case _ =>
+                      None
+                  }
+                }
+                success((ind, mainVar))
+              }
+
             // there is an equation in which the main variable is decomposed
             // into multiple string variables, corresponding to the capture
-            // groups
+            // groups (and other parts of the regex)
             chooseInt(start until matchInd) { concatInd =>
-              val (mainVar, groups) = assumeIsDefined {
+              val groups = assumeIsDefined {
                 cmds(concatInd) match {
-                  case AssertCmd(PlainApp("=",
-                                          PlainApp(mainVar),
-                                          PlainApp("str.++", rawGroups @ _*))) => {
+                  case AssertCmd(
+                    PlainApp("=",
+                             PlainApp(`mainVar`),
+                             PlainApp("str.++", rawGroups @ _*))) => {
                     val groups =
                       for (PlainApp(s@FillVarName(FillNameIndex, _)) <- rawGroups)
                       yield s
-                    Some((mainVar, groups))
+                    Some(groups)
                   }
                   case _ =>
                     None
@@ -187,22 +222,27 @@ object MatchRecoder extends BacktrackingSearch {
             }
           }
 
-          case 1 => chooseInt(start until matchInd) { matchDefInd =>
-            val (mainVar, regexTerm) = assumeIsDefined(
-              cmds(matchDefInd) match {
-                case AssertCmd(
-                  PlainApp("=",
-                           PlainApp("str.in.re", PlainApp(mainVar), regexTerm),
-                           PlainApp(MatchFlagName(`regex`, "0")))) =>
-                  Some((mainVar, regexTerm))
-                case _ =>
-                  None
-              })
+          case 1 => {
+            val (regexInd, mainVar, regexTerm) = 
+              findMaxInt[(Int, String, Term)](start until matchInd) { regexInd =>
+                val (mainVar, regexTerm) = assumeIsDefined(
+                  cmds(regexInd) match {
+                    case AssertCmd(
+                      PlainApp("=",
+                               PlainApp("str.in.re",
+                                        PlainApp(mainVar), regexTerm),
+                               PlainApp(MatchFlagName(`regex`, "0")))) =>
+                      Some((mainVar, regexTerm))
+                    case _ =>
+                      None
+                  })
+                success((regexInd, mainVar, regexTerm))
+              }
 
             // the |IsMatch_regex| flag has been used
             // only at the definition point
-            assumeForall(start until matchDefInd) {
-              ind => ind == matchDefInd || !matchOcc(cmds(ind))
+            assumeForall(start until regexInd) {
+              ind => ind == regexInd || !matchOcc(cmds(ind))
             }
 
             // there is an equation in which the main variable is decomposed
@@ -259,6 +299,8 @@ object MatchRecoder extends BacktrackingSearch {
          .replaceAll("\\x5C\\x7C", "|")
   }
 
+  //////////////////////////////////////////////////////////////////////////////
+
   // TODO: need to visit the children first?
   class SubstringReplacer(PrefixName  : String,
                           MainVarName : String,
@@ -279,12 +321,12 @@ object MatchRecoder extends BacktrackingSearch {
                                PlainApp(">=",
                                         PlainApp("+",
                                                  PlainApp("str.len", PlainApp(PrefixName)),
-                                                 PlainApp("str.len", PlainApp(MainVarName)),
+//                                                 PlainApp("str.len", PlainApp(MainVarName)),
                                                  rest1 @ _*),
                                         IntLit(0)),
                                PlainApp("+",
                                         PlainApp("str.len", PlainApp(PrefixName)),
-                                        PlainApp("str.len", PlainApp(MainVarName)),
+//                                        PlainApp("str.len", PlainApp(MainVarName)),
                                         rest2 @ _*),
                                IntLit(0)))
             if rest1 == rest2 && rest3 == rest4 => true

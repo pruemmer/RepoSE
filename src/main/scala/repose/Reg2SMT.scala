@@ -17,15 +17,25 @@ object Reg2SMT {
     Seq(executable, "-s", regex)
   }
 
-  def apply(regex : String) : Term = {
+  def apply(regex : String) : Term =
+    Parsing.parseExpression(translateRegex(regex))
+
+  private def translateRegex(regex : String) : String = {
     val output = new StringBuffer
 
     (reg2SMTCommand(regex) run BasicIO(false, output, None)).exitValue match {
       case 0 =>
-        Parsing.parseExpression(output.toString)
+        output.toString
       case err =>
         throw new Exception("reg2smt failed, exit value " + err)
     }
+  }
+
+  val ReCapture = """re\.capture""".r
+
+  def numCaptureGroups(regex : String) : Int = {
+    val transl = translateRegex(regex)
+    ReCapture.findAllMatchIn(transl).size
   }
 
 }

@@ -115,11 +115,24 @@ trait AlternatingSearch extends NDSearch {
   def chooseMinInt(r : Range)(comp : Int => Unit) : Unit
 
   /**
+   * Choose the maximum value in the given integer range for which program
+   * execution will succeed.
+   */
+  def chooseMaxInt(r : Range)(comp : Int => Unit) : Unit
+
+  /**
    * Recursively start a non-deterministic computation to find the minimum
    * integer for which some computation succeeds.
    */
   def findMinInt[Result](r : Range)(comp : Int => Unit) : Result =
     find[Result] { chooseMinInt(r)(comp) }
+
+  /**
+   * Recursively start a non-deterministic computation to find the maximum
+   * integer for which some computation succeeds.
+   */
+  def findMaxInt[Result](r : Range)(comp : Int => Unit) : Result =
+    find[Result] { chooseMaxInt(r)(comp) }
 
   /**
    * Assume that the given predicate holds for all elements of a collection.
@@ -167,6 +180,9 @@ trait BacktrackingSearch extends AlternatingSearch {
 
   def chooseMinInt(r : Range)(comp : Int => Unit) : Unit =
     chooseInt(r)(comp)
+
+  def chooseMaxInt(r : Range)(comp : Int => Unit) : Unit =
+    chooseInt(r.reverse)(comp)
 
   def assumeForall[T](coll : Iterable[T])(pred : T => Boolean) : Unit =
     assume(coll forall pred)

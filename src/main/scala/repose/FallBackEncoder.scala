@@ -39,6 +39,8 @@ object FallBackRecoder extends BacktrackingSearch {
   case class MatchOcc(startInd : Int, endInd : Int, fillNameIndex : String)
 
   def recode(cmds : Seq[Command], occ : MatchOcc, num : Int) : Seq[Command] = {
+    println("Rewriting fall-back: " + occ)
+
     val MatchOcc(startInd, endInd, fillNameIndex) = occ
     var newCmds = cmds
     newCmds =
