@@ -66,6 +66,8 @@ object ASTMatchers {
   }
 
   object StringLit {
+    def apply(s : String) : Term =
+      new ConstantTerm (new StringConstant ("\"" + s + "\""))
     def unapply(t : ConstantTerm) : SOption[String] = t match {
       case t : ConstantTerm  => t.specconstant_ match {
         case c : StringConstant =>

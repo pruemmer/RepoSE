@@ -8,6 +8,7 @@ import nd._
 
 import scala.{Option => SOption}
 import scala.collection.JavaConverters._
+import scala.collection.mutable.{HashMap => MHashMap}
 
 object Constants {
 
@@ -93,20 +94,41 @@ object MatchRecoder extends BacktrackingSearch {
                                 membershipInd - startInd)
 
         if (doReplace) {
-          val visitor =
+          val visitor1 =
             new SubstringReplacer(cgVars.head, stringVar, cgVars.last)
-          newCmds = newCmds map (_.accept(visitor, ()))
+          newCmds = newCmds map (_.accept(visitor1, ()))
+          val visitor2 =
+            new ResultReplacer(cgVars.head, cgVars.last, cgVars,
+                               "replace_" + fillNameIndex)
+          newCmds = newCmds map (_.accept(visitor2, ()))
+          for ((t, v) <- visitor2.replacedTerms.toSeq.sortBy(_._2)) {
+            newCmds = newCmds.patch(
+              startInd,
+              Parsing.parseString("(declare-const " + v + " String)") ++
+              List(AssertCmd(PlainApp("=", PlainApp(v), t))), 0)
+          }
         }
 
         Transducers.addTransducers(newCmds, transducerDefs)
       }
 
       case Options.MatchEncoding.RegexTerm => {
-        if (cgVars.size != numCG)
-          throw new Exception(
-            "Number of variables and capture groups is inconsistent")
+        val (regexTerm, doReplace, cgVarsToAssign) =
+          (numCG, cgVars.size) match {
+            case (n1, n2) if n1 == n2 =>
+              (Reg2SMT(regex),
+               false, cgVars)
+            case (n1, n2) if n2 == n1 + 2 =>
+              (Reg2SMT("(.*?)" + regex + "(.*)"),
+               true, cgVars)
+            case (0, n) if n >= 2 =>
+              (Reg2SMT("(.*?)" + regex + "(.*)"),
+               true, List(cgVars.head, cgVars.last))
+            case n =>
+              throw new Exception(
+                "Number of variables and capture groups is inconsistent")
+          }
 
-        val regexTerm = Reg2SMT(regex)
         var newCmds = cmds
 
         val regexVar = "re!1"
@@ -123,8 +145,63 @@ object MatchRecoder extends BacktrackingSearch {
         newCmds = newCmds.patch(startInd, List(markerAssertion(fillNameIndex)),
                                 membershipInd - startInd)
 
+        if (doReplace) {
+          val visitor1 =
+            new SubstringReplacer(cgVars.head, stringVar, cgVars.last)
+          newCmds = newCmds map (_.accept(visitor1, ()))
+
+          val visitor2 =
+            new ResultReplacer(cgVars.head, cgVars.last, cgVars,
+                               "replace_" + fillNameIndex)
+          newCmds = newCmds map (_.accept(visitor2, ()))
+
+          val smallRegexTerm = Reg2SMT(regex)
+          for ((t, v) <- visitor2.replacedTerms.toSeq.sortBy(_._2)) {
+            val declaration =
+              Parsing.parseString("(declare-const " + v + " String)")
+
+            val addCmds =
+            translateReplacementTerm(t, cgVars) match {
+              case PlainApp("str.to.re", r@StringLit(_)) =>
+                declaration ++
+                List(AssertCmd(PlainApp("=",
+                                        PlainApp(v),
+                                        PlainApp("str.replace_re",
+                                                 PlainApp(stringVar),
+                                                 smallRegexTerm,
+                                                 r))))
+              case replTerm =>
+                declaration ++
+                List(AssertCmd(PlainApp("=",
+                                        PlainApp(v),
+                                        PlainApp("str.replace_cg",
+                                                 PlainApp(stringVar),
+                                                 smallRegexTerm,
+                                                 replTerm))))
+            }
+
+            newCmds = newCmds.patch(startInd, addCmds, 0)
+          }
+        }
+
         newCmds
       }
+    }
+  }
+
+  def translateReplacementTerm(t : Term, cgVars : Seq[String]) : Term = {
+    def toRE(s : Term) : Term = s match {
+      case x@StringLit(_) => PlainApp("str.to.re", x)
+      case PlainApp(v)    => FunApp(IndexedSymbol("re.reference",
+                                                  "" + (cgVars indexOf v)))
+    }
+
+    val PlainApp("str.++", args @ _*) = t
+
+    args.drop(1).dropRight(1) match {
+      case Seq()   => PlainApp("str.to.re", StringLit(""))
+      case Seq(x)  => toRE(x)
+      case midArgs => PlainApp("re.++", midArgs map toRE : _*)
     }
   }
 
@@ -375,6 +452,34 @@ object MatchRecoder extends BacktrackingSearch {
 
       case p => super.visit(p, ())
     }
+
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  class ResultReplacer(PrefixName   : String,
+                       SuffixName   : String,
+                       cgVars       : Seq[String],
+                       newVarPrefix : String) extends ComposVisitor[Unit] {
+
+    val replacedTerms = new MHashMap[Term, String]
+
+    override def visit(p : FunctionTerm, arg : Unit) : Term =
+      super.visit(p, arg) match {
+        case t@PlainApp("str.++", PlainApp(PrefixName), otherArgs @ _*)
+            if (otherArgs.lastOption match {
+                  case Some(PlainApp(SuffixName)) => true
+                  case _                          => false
+                }) &&
+               (otherArgs forall {
+                  case StringLit(_) => true
+                  case PlainApp(x)  => cgVars contains x
+                  case _            => false
+                }) =>
+          PlainApp(replacedTerms.getOrElseUpdate(
+                     t, newVarPrefix + "_" + replacedTerms.size))
+        case t => t
+      }
 
   }
 
