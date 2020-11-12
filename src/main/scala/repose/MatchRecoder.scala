@@ -9,6 +9,7 @@ import nd._
 import scala.{Option => SOption}
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{HashMap => MHashMap}
+import scala.collection.{Map => GMap}
 
 object Constants {
 
@@ -66,6 +67,9 @@ object MatchRecoder extends BacktrackingSearch {
     println("  Equation: " + (printer print cmds(concatInd)))
     println("  Capture groups found: " + numCG)
 
+    val rewritings = new MHashMap[Term, Term]
+
+    val newCmds =
     Options.matchEncoding match {
       case Options.MatchEncoding.PrioTransducer => {
         val ((transducerFuns, transducerDefs), doReplace, cgVarsToAssign) =
@@ -97,16 +101,20 @@ object MatchRecoder extends BacktrackingSearch {
           val visitor1 =
             new SubstringReplacer(cgVars.head, stringVar, cgVars.last)
           newCmds = newCmds map (_.accept(visitor1, ()))
+
           val visitor2 =
             new ResultReplacer(cgVars.head, cgVars.last, cgVars,
                                "replace_" + fillNameIndex)
           newCmds = newCmds map (_.accept(visitor2, ()))
+
           for ((t, v) <- visitor2.replacedTerms.toSeq.sortBy(_._2)) {
             newCmds = newCmds.patch(
               startInd,
               Parsing.parseString("(declare-const " + v + " String)") ++
               List(AssertCmd(PlainApp("=", PlainApp(v), t))), 0)
           }
+
+          rewritings ++= extractLengthSubst(visitor2.replacedTerms)
         }
 
         Transducers.addTransducers(newCmds, transducerDefs)
@@ -182,12 +190,23 @@ object MatchRecoder extends BacktrackingSearch {
 
             newCmds = newCmds.patch(startInd, addCmds, 0)
           }
+
+          rewritings ++= extractLengthSubst(visitor2.replacedTerms)
         }
 
         newCmds
       }
     }
+
+    for ((a, b) <- rewritings)
+      println((printer print a) + " -> " + (printer print b))
+
+    val visitor = new TermReplacer (rewritings)
+
+    newCmds map (_.accept(visitor, ()))
   }
+
+  //////////////////////////////////////////////////////////////////////////////
 
   def translateReplacementTerm(t : Term, cgVars : Seq[String]) : Term = {
     def toRE(s : Term) : Term = s match {
@@ -204,6 +223,8 @@ object MatchRecoder extends BacktrackingSearch {
       case midArgs => PlainApp("re.++", midArgs map toRE : _*)
     }
   }
+
+  //////////////////////////////////////////////////////////////////////////////
 
   def findOccurrence(cmds : Seq[Command]) : SOption[MatchOcc] =
     search[MatchOcc] {
@@ -481,6 +502,25 @@ object MatchRecoder extends BacktrackingSearch {
         case t => t
       }
 
+  }
+
+  def extractLengthSubst(replacedTerms : GMap[Term, String]) : Map[Term, Term] = {
+    (for ((t, v) <- replacedTerms.iterator) yield {
+       val PlainApp("str.++", args @ _*) = t
+       (PlainApp("+", args map { x => PlainApp("str.len", x) } : _*),
+        PlainApp("str.len", PlainApp(v)))
+     }).toMap
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+
+  class TermReplacer(subst : GMap[Term, Term]) extends ComposVisitor[Unit] {
+    override def visit(p : FunctionTerm, arg : Unit) : Term =
+      super.visit(p, arg) match {
+        case newP if subst contains newP => subst(newP)
+        case PlainApp("str.len", PlainApp("str.substr", _, _, len)) => len
+        case newP => newP
+      }
   }
 
 }
