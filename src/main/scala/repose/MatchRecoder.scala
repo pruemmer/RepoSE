@@ -70,15 +70,15 @@ object MatchRecoder extends BacktrackingSearch {
       case Options.MatchEncoding.PrioTransducer => {
         val ((transducerFuns, transducerDefs), doReplace, cgVarsToAssign) =
           (numCG, cgVars.size) match {
+            case (0, n) if n >= 2 =>
+              (Reg2PT("(.*?)" + regex + "(.*)", "MatchTD_" + num + "_"),
+               true, List(cgVars.head, cgVars.last))
             case (n1, n2) if n1 == n2 =>
               (Reg2PT(regex, "MatchTD_" + num + "_"),
                false, cgVars)
             case (n1, n2) if n2 == n1 + 2 =>
               (Reg2PT("(.*?)" + regex + "(.*)", "MatchTD_" + num + "_"),
                true, cgVars)
-            case (0, n) if n >= 2 =>
-              (Reg2PT("(.*?)" + regex + "(.*)", "MatchTD_" + num + "_"),
-               true, List(cgVars.head, cgVars.last))
             case n =>
               throw new Exception(
                 "Number of variables and capture groups is inconsistent")
@@ -115,15 +115,15 @@ object MatchRecoder extends BacktrackingSearch {
       case Options.MatchEncoding.RegexTerm => {
         val (regexTerm, doReplace, cgVarsToAssign) =
           (numCG, cgVars.size) match {
+            case (0, n) if n >= 2 =>
+              (Reg2SMT("(.*)" + regex + "(.*)"),
+               true, List(cgVars.head, cgVars.last))
             case (n1, n2) if n1 == n2 =>
               (Reg2SMT(regex),
                false, cgVars)
             case (n1, n2) if n2 == n1 + 2 =>
-              (Reg2SMT("(.*?)" + regex + "(.*)"),
+              (Reg2SMT("(.*)" + regex + "(.*)"),
                true, cgVars)
-            case (0, n) if n >= 2 =>
-              (Reg2SMT("(.*?)" + regex + "(.*)"),
-               true, List(cgVars.head, cgVars.last))
             case n =>
               throw new Exception(
                 "Number of variables and capture groups is inconsistent")
@@ -133,7 +133,7 @@ object MatchRecoder extends BacktrackingSearch {
 
         val regexVar = "re!1"
         val extractors =
-          for ((cgVar, n) <- cgVars.zipWithIndex)
+          for ((cgVar, n) <- cgVarsToAssign.zipWithIndex)
           yield PlainApp("=",
                          PlainApp(cgVar),
                          FunApp(IndexedSymbol("str.extract", (n+1).toString),
