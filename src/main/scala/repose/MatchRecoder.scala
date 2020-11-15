@@ -301,7 +301,9 @@ object MatchRecoder extends BacktrackingSearch {
                 val mainVar = assumeIsDefined {
                   cmds(ind) match {
                     case AssertCmd(PlainApp("str.in.re",
-                                            mainVar, _)) =>
+                                            PlainApp(FillVarName(FillNameIndex, _)), _)) =>
+                      None
+                    case AssertCmd(PlainApp("str.in.re", mainVar, _)) =>
                       Some(mainVar)
                     case _ =>
                       None
