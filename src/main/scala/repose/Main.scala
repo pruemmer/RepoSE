@@ -16,6 +16,14 @@ object Main {
             Options.matchEncoding = Options.MatchEncoding.RegexTerm
           case SuffixOption(suffix) =>
             Options.filenameSuffix = suffix
+          case "-PST" => {
+            Options.filenameSuffix = "PST"
+            Options.matchEncoding = Options.MatchEncoding.PrioTransducer
+          }
+          case "-PSST" => {
+            Options.filenameSuffix = "PSST"
+            Options.matchEncoding = Options.MatchEncoding.RegexTerm
+          }
           case inputFile => {
             val outputFile = inputFile + "-" + Options.filenameSuffix + ".smt2"
             trans.transform(inputFile, outputFile)

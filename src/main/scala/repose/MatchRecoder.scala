@@ -8,7 +8,7 @@ import nd._
 
 import scala.{Option => SOption}
 import scala.collection.JavaConverters._
-import scala.collection.mutable.{HashMap => MHashMap}
+import scala.collection.mutable.{HashMap => MHashMap, ArrayBuffer}
 import scala.collection.{Map => GMap}
 
 object Constants {
@@ -49,14 +49,15 @@ object MatchRecoder extends BacktrackingSearch {
 
   val printer = new PrettyPrinterNonStatic
 
-  case class MatchOcc(startInd      : Int,
-                      membershipInd : Int,
-                      concatInd     : Int,
-                      matchInd      : Int,
-                      regex         : String,
-                      stringVar     : String,
-                      cgVars        : Seq[String],
-                      fillNameIndex : String)
+  case class MatchOcc(startInd         : Int,
+                      membershipInd    : Int,
+                      concatInd        : Int,
+                      matchInd         : Int,
+                      regex            : String,
+                      stringVar        : Term,
+                      otherStringTerms : Seq[Term],
+                      cgVars           : Seq[String],
+                      fillNameIndex    : String)
 
   def recode(cmds : Seq[Command], occ : MatchOcc, num : Int) : Seq[Command] = {
     import occ._
@@ -65,11 +66,19 @@ object MatchRecoder extends BacktrackingSearch {
 
     println("Rewriting match: " + occ)
     println("  Equation: " + (printer print cmds(concatInd)))
+    println("  Extracted variables: " + (cgVars mkString ", "))
     println("  Capture groups found: " + numCG)
 
-    val rewritings = new MHashMap[Term, Term]
+    var newCmds = cmds
 
-    val newCmds =
+    val preRewritings, rewritings = new MHashMap[Term, Term]
+    val preRewriter = new TermReplacer(preRewritings)
+
+    // sometimes multiple representations of the processed string variable occur,
+    // first unify those
+    for (t <- otherStringTerms)
+      preRewritings.put(t, stringVar)
+
     Options.matchEncoding match {
       case Options.MatchEncoding.PrioTransducer => {
         val ((transducerFuns, transducerDefs), doReplace, cgVarsToAssign) =
@@ -88,36 +97,40 @@ object MatchRecoder extends BacktrackingSearch {
                 "Number of variables and capture groups is inconsistent")
           }
 
-        var newCmds = cmds
         val transducerApps =
           for ((cgVar, tdFun) <- cgVarsToAssign zip transducerFuns)
-          yield AssertCmd(PlainApp(tdFun, PlainApp(stringVar), PlainApp(cgVar)))
+          yield AssertCmd(PlainApp(tdFun, stringVar, PlainApp(cgVar)))
 
-        newCmds = newCmds.patch(concatInd, transducerApps, 1)
-        newCmds = newCmds.patch(startInd, List(markerAssertion(fillNameIndex)),
-                                membershipInd - startInd)
-
+        var remCmds = newCmds drop matchInd
+        remCmds = remCmds map (_.accept(preRewriter, ()))
         if (doReplace) {
           val visitor1 =
             new SubstringReplacer(cgVars.head, stringVar, cgVars.last)
-          newCmds = newCmds map (_.accept(visitor1, ()))
+          remCmds = remCmds map (_.accept(visitor1, ()))
 
           val visitor2 =
             new ResultReplacer(cgVars.head, cgVars.last, cgVars,
                                "replace_" + fillNameIndex)
-          newCmds = newCmds map (_.accept(visitor2, ()))
+          remCmds = remCmds map (_.accept(visitor2, ()))
 
           for ((t, v) <- visitor2.replacedTerms.toSeq.sortBy(_._2)) {
-            newCmds = newCmds.patch(
-              startInd,
+            remCmds =
               Parsing.parseString("(declare-const " + v + " String)") ++
-              List(AssertCmd(PlainApp("=", PlainApp(v), t))), 0)
+              List(AssertCmd(PlainApp("=", PlainApp(v), t))) ++
+              remCmds
           }
 
           rewritings ++= extractLengthSubst(visitor2.replacedTerms)
         }
 
-        Transducers.addTransducers(newCmds, transducerDefs)
+        newCmds =
+          (newCmds take startInd) ++
+          transducerApps ++
+          List(markerAssertion(fillNameIndex),
+               newCmds(membershipInd).accept(preRewriter, ())) ++
+          remCmds
+
+        newCmds = Transducers.addTransducers(newCmds, transducerDefs)
       }
 
       case Options.MatchEncoding.RegexTerm => {
@@ -137,31 +150,33 @@ object MatchRecoder extends BacktrackingSearch {
                 "Number of variables and capture groups is inconsistent")
           }
 
-        var newCmds = cmds
-
         val regexVar = "re!1"
         val extractors =
           for ((cgVar, n) <- cgVarsToAssign.zipWithIndex)
           yield PlainApp("=",
                          PlainApp(cgVar),
                          FunApp(IndexedSymbol("str.extract", (n+1).toString),
-                                PlainApp(stringVar), PlainApp(regexVar)))
+                                stringVar, PlainApp(regexVar)))
         val extractorConj =
           AssertCmd(Let(PlainApp("and", extractors : _*),(regexVar, regexTerm)))
 
+/*
         newCmds = newCmds.patch(concatInd, List(extractorConj), 1)
         newCmds = newCmds.patch(startInd, List(markerAssertion(fillNameIndex)),
                                 membershipInd - startInd)
+ */
 
+        var remCmds = newCmds drop matchInd
+        remCmds = remCmds map (_.accept(preRewriter, ()))
         if (doReplace) {
           val visitor1 =
             new SubstringReplacer(cgVars.head, stringVar, cgVars.last)
-          newCmds = newCmds map (_.accept(visitor1, ()))
+          remCmds = remCmds map (_.accept(visitor1, ()))
 
           val visitor2 =
             new ResultReplacer(cgVars.head, cgVars.last, cgVars,
                                "replace_" + fillNameIndex)
-          newCmds = newCmds map (_.accept(visitor2, ()))
+          remCmds = remCmds map (_.accept(visitor2, ()))
 
           val smallRegexTerm = Reg2SMT(regex)
           for ((t, v) <- visitor2.replacedTerms.toSeq.sortBy(_._2)) {
@@ -175,7 +190,7 @@ object MatchRecoder extends BacktrackingSearch {
                 List(AssertCmd(PlainApp("=",
                                         PlainApp(v),
                                         PlainApp("str.replace_re",
-                                                 PlainApp(stringVar),
+                                                 stringVar,
                                                  smallRegexTerm,
                                                  r))))
               case replTerm =>
@@ -183,26 +198,27 @@ object MatchRecoder extends BacktrackingSearch {
                 List(AssertCmd(PlainApp("=",
                                         PlainApp(v),
                                         PlainApp("str.replace_cg",
-                                                 PlainApp(stringVar),
+                                                 stringVar,
                                                  smallRegexTerm,
                                                  replTerm))))
             }
 
-            newCmds = newCmds.patch(startInd, addCmds, 0)
+            remCmds = addCmds ++ remCmds
           }
 
           rewritings ++= extractLengthSubst(visitor2.replacedTerms)
         }
 
-        newCmds
+        newCmds =
+          (newCmds take startInd) ++
+          List(extractorConj,
+               markerAssertion(fillNameIndex),
+               newCmds(membershipInd).accept(preRewriter, ())) ++
+          remCmds
       }
     }
 
-    for ((a, b) <- rewritings)
-      println((printer print a) + " -> " + (printer print b))
-
     val visitor = new TermReplacer (rewritings)
-
     newCmds map (_.accept(visitor, ()))
   }
 
@@ -253,22 +269,22 @@ object MatchRecoder extends BacktrackingSearch {
         }
 
         // identify the |IsMatch_regex| flag
-        val (matchInd, regex) =
-          findMinInt[(Int, String)]((start + 1) until cmds.size) { end =>
-            val regex = assumeIsDefined {
+        val (matchInd, matchFlagNum, regex) =
+          findMinInt[(Int, String, String)]((start + 1) until cmds.size) { end =>
+            val (regex, num) = assumeIsDefined {
               cmds(end) match {
-                case AssertCmd(PlainApp(MatchFlagName(regex, "0"))) =>
-                  Some(regex)
+                case AssertCmd(PlainApp(MatchFlagName(regex, num))) =>
+                  Some((regex, num))
                 case _ =>
                   None
               }
             }
-            success((end, regex))
+            success((end, num, regex))
           }
 
         def matchOcc(cmd : Command) =
           ContainsSymbolVisitor(cmd) {
-            case MatchFlagName(`regex`, "0") => true
+            case MatchFlagName(`regex`, `matchFlagNum`) => true
             case _ => false
           }
 
@@ -281,11 +297,11 @@ object MatchRecoder extends BacktrackingSearch {
 
             // there is a regular membership query defining the string variable
             val (regexInd, mainVar) =
-              findMaxInt[(Int, String)](start until matchInd) { ind =>
+              findMaxInt[(Int, Term)](start until matchInd) { ind =>
                 val mainVar = assumeIsDefined {
                   cmds(ind) match {
                     case AssertCmd(PlainApp("str.in.re",
-                                            PlainApp(mainVar), _)) =>
+                                            mainVar, _)) =>
                       Some(mainVar)
                     case _ =>
                       None
@@ -297,38 +313,65 @@ object MatchRecoder extends BacktrackingSearch {
             // there is an equation in which the main variable is decomposed
             // into multiple string variables, corresponding to the capture
             // groups (and other parts of the regex)
-            chooseInt(start until matchInd) { concatInd =>
-              val groups = assumeIsDefined {
-                cmds(concatInd) match {
-                  case AssertCmd(
-                    PlainApp("=",
-                             PlainApp(`mainVar`),
-                             PlainApp("str.++", rawGroups @ _*))) => {
-                    val groups =
-                      for (PlainApp(s@FillVarName(FillNameIndex, _)) <- rawGroups)
-                      yield s
-                    Some(groups)
+            alternatives(2) {
+              case 0 =>
+                chooseInt(start until matchInd) { concatInd =>
+                  val groups = assumeIsDefined {
+                    cmds(concatInd) match {
+                      case AssertCmd(
+                        PlainApp("=",
+                                 `mainVar`,
+                                 PlainApp("str.++", rawGroups @ _*))) => {
+                        val groups =
+                          for (PlainApp(s@FillVarName(FillNameIndex, _)) <- rawGroups)
+                          yield s
+                        Some(groups)
+                      }
+                      case _ =>
+                        None
+                    }
                   }
-                  case _ =>
-                    None
-                }
-              }
 
-              success(MatchOcc(start, concatInd - 1, concatInd, matchInd,
-                               massageRegex(regex),
-                               mainVar, groups, FillNameIndex))
+                  success(MatchOcc(start, regexInd, concatInd, matchInd,
+                                   massageRegex(regex),
+                                   mainVar, List(), groups, FillNameIndex))
+                }
+
+              case 1 =>
+                chooseInt(start until matchInd) { concatInd =>
+                  val (realMainVar, groups) = assumeIsDefined {
+                    cmds(concatInd) match {
+                      case AssertCmd(
+                        PlainApp("=",
+                                 realMainVar,
+                                 `mainVar`)) => {
+                        val PlainApp("str.++", rawGroups @ _*) = mainVar
+                        val groups =
+                          for (PlainApp(s@FillVarName(FillNameIndex, _)) <- rawGroups)
+                          yield s
+                        Some((realMainVar, groups))
+                      }
+                      case _ =>
+                        None
+                    }
+                  }
+
+                  success(MatchOcc(start, regexInd, concatInd, matchInd,
+                                   massageRegex(regex),
+                                   realMainVar, List(mainVar), groups, FillNameIndex))
+                }
             }
           }
 
           case 1 => {
             val (regexInd, mainVar, regexTerm) = 
-              findMaxInt[(Int, String, Term)](start until matchInd) { regexInd =>
+              findMaxInt[(Int, Term, Term)](start until matchInd) { regexInd =>
                 val (mainVar, regexTerm) = assumeIsDefined(
                   cmds(regexInd) match {
                     case AssertCmd(
                       PlainApp("=",
                                PlainApp("str.in.re",
-                                        PlainApp(mainVar), regexTerm),
+                                        mainVar, regexTerm),
                                PlainApp(MatchFlagName(`regex`, "0")))) =>
                       Some((mainVar, regexTerm))
                     case _ =>
@@ -353,7 +396,7 @@ object MatchRecoder extends BacktrackingSearch {
                       PlainApp("or",
                                PlainApp("not",
                                PlainApp("str.in.re",
-                                        PlainApp(`mainVar`), `regexTerm`)),
+                                        `mainVar`, `regexTerm`)),
                                CGEquation(`mainVar`, groups))) =>
                     Some(groups)
                   case _ =>
@@ -361,9 +404,9 @@ object MatchRecoder extends BacktrackingSearch {
                 }
               }
 
-              success(MatchOcc(start, concatInd - 1, concatInd, matchInd,
+              success(MatchOcc(start, regexInd, concatInd, matchInd,
                                massageRegex(regex),
-                               mainVar, groups, FillNameIndex))
+                               mainVar, List(), groups, FillNameIndex))
             }
           }
         }
@@ -371,9 +414,9 @@ object MatchRecoder extends BacktrackingSearch {
     }
 
   class CaptureGroupEquation(FillNameIndex : String) {
-    def unapply(t : Term) : SOption[(String, Seq[String])] = t match {
+    def unapply(t : Term) : SOption[(Term, Seq[String])] = t match {
       case PlainApp("=",
-                    PlainApp(mainVar),
+                    mainVar,
                     PlainApp("str.++", rawGroups @ _*)) => {
         val groups =
           for (PlainApp(s@FillVarName(FillNameIndex, _)) <- rawGroups)
@@ -381,7 +424,7 @@ object MatchRecoder extends BacktrackingSearch {
         Some((mainVar, groups))
       }
       case PlainApp("=",
-                    PlainApp(mainVar),
+                    mainVar,
                     PlainApp(s@FillVarName(FillNameIndex, _))) =>
         Some((mainVar, List(s)))
       case _ =>
@@ -401,7 +444,7 @@ object MatchRecoder extends BacktrackingSearch {
 
   // TODO: need to visit the children first?
   class SubstringReplacer(PrefixName  : String,
-                          MainVarName : String,
+                          MainVar     : Term,
                           SuffixName  : String) extends ComposVisitor[Unit] {
 
     object Var4Def {
@@ -419,12 +462,12 @@ object MatchRecoder extends BacktrackingSearch {
                                PlainApp(">=",
                                         PlainApp("+",
                                                  PlainApp("str.len", PlainApp(PrefixName)),
-//                                                 PlainApp("str.len", PlainApp(MainVarName)),
+//                                                 PlainApp("str.len", MainVar),
                                                  rest1 @ _*),
                                         IntLit(0)),
                                PlainApp("+",
                                         PlainApp("str.len", PlainApp(PrefixName)),
-//                                        PlainApp("str.len", PlainApp(MainVarName)),
+//                                        PlainApp("str.len", MainVar),
                                         rest2 @ _*),
                                IntLit(0)))
             if rest1 == rest2 && rest3 == rest4 => true
@@ -435,11 +478,11 @@ object MatchRecoder extends BacktrackingSearch {
     override def visit(p : FunctionTerm, arg : Unit) : Term = p match {
       case PlainApp("ite",
                     PlainApp("<=",
-                             PlainApp("str.len", PlainApp(MainVarName)),
+                             PlainApp("str.len", MainVar),
                              IntLit(0)),
                     StringLit(""),
                     PlainApp("str.substr",
-                             PlainApp(MainVarName),
+                             MainVar,
                              IntLit(0),
                              PlainApp("ite",
                                       PlainApp(">=",
@@ -447,9 +490,9 @@ object MatchRecoder extends BacktrackingSearch {
                                                         PlainApp("str.len", PlainApp(PrefixName)),
                                                         PlainApp("*",
                                                                  IntLit(-1),
-                                                                 PlainApp("str.len", PlainApp(MainVarName)))),
+                                                                 PlainApp("str.len", MainVar))),
                                                IntLit(0)),
-                                      PlainApp("str.len", PlainApp(MainVarName)),
+                                      PlainApp("str.len", MainVar),
                                       PlainApp("str.len", PlainApp(PrefixName))))) =>
         PlainApp(PrefixName)
 
@@ -459,15 +502,15 @@ object MatchRecoder extends BacktrackingSearch {
       case PlainApp("ite",
                       PlainApp("<=",
                                PlainApp("+",
-                                        PlainApp("str.len", PlainApp(MainVarName)),
+                                        PlainApp("str.len", MainVar),
                                         PlainApp("*", IntLit(-1), Var4Def())),
                                IntLit(0)),
                       StringLit(""),
                       PlainApp("str.substr",
-                               PlainApp(MainVarName),
+                               MainVar,
                                Var4Def(),
                                PlainApp("+",
-                                        PlainApp("str.len", PlainApp(MainVarName)),
+                                        PlainApp("str.len", MainVar),
                                         PlainApp("*", IntLit(-1), Var4Def())))) =>
         PlainApp(SuffixName)
 
