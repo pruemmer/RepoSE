@@ -31,7 +31,7 @@ object Main {
         }
       } catch {
         case e : Exception =>
-          Console.err.println(e.getMessage)
+          e.printStackTrace
       }
   }
 

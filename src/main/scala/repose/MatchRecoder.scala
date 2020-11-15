@@ -345,7 +345,12 @@ object MatchRecoder extends BacktrackingSearch {
                         PlainApp("=",
                                  realMainVar,
                                  `mainVar`)) => {
-                        val PlainApp("str.++", rawGroups @ _*) = mainVar
+                        val rawGroups = assumeIsDefined {
+                          mainVar match {
+                            case PlainApp("str.++", rawGroups @ _*) => Some(rawGroups)
+                            case _ => None
+                          }
+                        }
                         val groups =
                           for (PlainApp(s@FillVarName(FillNameIndex, _)) <- rawGroups)
                           yield s
