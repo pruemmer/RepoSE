@@ -11,4 +11,6 @@ object Options {
 
   var filenameSuffix : String = "processed"
 
+  var fallback : Boolean = true
+
 }

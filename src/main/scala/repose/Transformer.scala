@@ -22,7 +22,7 @@ class Transformer {
     val script3 = RecFunElim(script2)
     val script4 = LetInliner(script3)
     val script5 = MatchRecoder(script4)
-    val script6 = FallBackRecoder(script5)
+    val script6 = if (Options.fallback) FallBackRecoder(script5) else script5
     val script7 = QuotedIdSanitizer(script6)
 
     val out = new java.io.FileOutputStream(outputFile)

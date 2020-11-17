@@ -567,8 +567,30 @@ object MatchRecoder extends BacktrackingSearch {
   class TermReplacer(subst : GMap[Term, Term]) extends ComposVisitor[Unit] {
     override def visit(p : FunctionTerm, arg : Unit) : Term =
       super.visit(p, arg) match {
-        case newP if subst contains newP => subst(newP)
-        case PlainApp("str.len", PlainApp("str.substr", _, _, len)) => len
+        case newP if subst contains newP =>
+          subst(newP)
+        case PlainApp("str.len", PlainApp("str.substr", _, _, len)) =>
+          len
+        // (ite (<= (str.len Prefix0) 0) (str.len Prefix0) 0)
+        case PlainApp("ite",
+                      PlainApp("<=", PlainApp("str.len", x1), IntLit(0)),
+                      PlainApp("str.len", x2),
+                      IntLit(0))
+            if x1 == x2 =>
+          IntLit(0)
+        case PlainApp("str.substr", _, _, IntLit(0)) =>
+          StringLit("")
+        case PlainApp("ite", _, x1, x2) if x1 == x2 =>
+          x1
+        case PlainApp("ite",
+                      PlainApp(">=", PlainApp("str.len", x1), IntLit(0)),
+                      PlainApp("str.len", x2),
+                      IntLit(0))
+            if x1 == x2 =>
+          PlainApp("str.len", x1)
+        case PlainApp("+", x1, PlainApp("*", IntLit(-1), x2))
+            if x1 == x2 =>
+          IntLit(0)
         case newP => newP
       }
   }

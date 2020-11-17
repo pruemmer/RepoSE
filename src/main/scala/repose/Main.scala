@@ -24,6 +24,9 @@ object Main {
             Options.filenameSuffix = "PSST"
             Options.matchEncoding = Options.MatchEncoding.RegexTerm
           }
+          case "-no-fallback" => {
+            Options.fallback = false
+          }
           case inputFile => {
             val outputFile = inputFile + "-" + Options.filenameSuffix + ".smt2"
             trans.transform(inputFile, outputFile)
