@@ -57,12 +57,19 @@ object MatchRecoder extends BacktrackingSearch {
                       stringVar        : Term,
                       otherStringTerms : Seq[Term],
                       cgVars           : Seq[String],
-                      fillNameIndex    : String)
+                      fillNameIndex    : String,
+                      numCG            : Int)
+
+  def consistentCGs(numCG : Int, cgVars : Seq[String]) : Boolean =
+    (numCG, cgVars.size) match {
+      case (0, n) if n >= 2         => true
+      case (n1, n2) if n1 == n2     => true
+      case (n1, n2) if n2 == n1 + 2 => true
+      case _                        => false
+    }
 
   def recode(cmds : Seq[Command], occ : MatchOcc, num : Int) : Seq[Command] = {
     import occ._
-
-    val numCG = Reg2SMT.numCaptureGroups(regex)
 
     println("Rewriting match: " + occ)
     println("  Equation: " + (printer print cmds(concatInd)))
@@ -334,9 +341,14 @@ object MatchRecoder extends BacktrackingSearch {
                     }
                   }
 
+                  val finalRegex = massageRegex(regex)
+                  val numCG = Reg2SMT.numCaptureGroups(finalRegex)
+                  assume(consistentCGs(numCG, groups))
+
                   success(MatchOcc(start, regexInd, concatInd, matchInd,
-                                   massageRegex(regex),
-                                   mainVar, List(), groups, FillNameIndex))
+                                   finalRegex,
+                                   mainVar, List(), groups, FillNameIndex,
+                                   numCG))
                 }
 
               case 1 =>
@@ -363,9 +375,14 @@ object MatchRecoder extends BacktrackingSearch {
                     }
                   }
 
+                  val finalRegex = massageRegex(regex)
+                  val numCG = Reg2SMT.numCaptureGroups(finalRegex)
+                  assume(consistentCGs(numCG, groups))
+
                   success(MatchOcc(start, regexInd, concatInd, matchInd,
-                                   massageRegex(regex),
-                                   realMainVar, List(mainVar), groups, FillNameIndex))
+                                   finalRegex,
+                                   realMainVar, List(mainVar), groups,
+                                   FillNameIndex, numCG))
                 }
             }
           }
@@ -411,9 +428,14 @@ object MatchRecoder extends BacktrackingSearch {
                 }
               }
 
+              val finalRegex = massageRegex(regex)
+              val numCG = Reg2SMT.numCaptureGroups(finalRegex)
+              assume(consistentCGs(numCG, groups))
+
               success(MatchOcc(start, regexInd, concatInd, matchInd,
-                               massageRegex(regex),
-                               mainVar, List(), groups, FillNameIndex))
+                               finalRegex,
+                               mainVar, List(), groups, FillNameIndex,
+                               numCG))
             }
           }
         }
@@ -569,6 +591,8 @@ object MatchRecoder extends BacktrackingSearch {
       super.visit(p, arg) match {
         case newP if subst contains newP =>
           subst(newP)
+        case PlainApp("str.len", StringLit(x)) =>
+          IntLit(x.size)
         case PlainApp("str.len", PlainApp("str.substr", _, _, len)) =>
           len
         // (ite (<= (str.len Prefix0) 0) (str.len Prefix0) 0)
@@ -591,6 +615,30 @@ object MatchRecoder extends BacktrackingSearch {
         case PlainApp("+", x1, PlainApp("*", IntLit(-1), x2))
             if x1 == x2 =>
           IntLit(0)
+        case PlainApp("+", x) =>
+          x
+        case newP@PlainApp("+", args @ _*) => {
+          val newArgs = args filterNot {
+            case IntLit(0) => true
+            case _ => false
+          }
+          if (newArgs.size < args.size)
+            PlainApp("+", newArgs : _*).accept(this, ())
+          else
+            newP
+        }
+        case PlainApp("str.++", x) =>
+          x
+        case newP@PlainApp("str.++", args @ _*) => {
+          val newArgs = args filterNot {
+            case StringLit("") => true
+            case _ => false
+          }
+          if (newArgs.size < args.size)
+            PlainApp("str.++", newArgs : _*).accept(this, ())
+          else
+            newP
+        }
         case newP => newP
       }
   }

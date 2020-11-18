@@ -91,7 +91,8 @@ object FallBackRecoder extends BacktrackingSearch {
         chooseInt((start + 1) until cmds.size) { end =>
           assumeForall(start to end) { ind => containsFill(ind) }
 
-          assume(end + 1 >= cmds.size || !containsFill(end + 1))
+//          assume(end + 1 >= cmds.size || !containsFill(end + 1))
+          assumeNoFill(end + 1, cmds.size)
 
           success(MatchOcc(start, end, FillNameIndex))
         }

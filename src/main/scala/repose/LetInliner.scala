@@ -35,13 +35,15 @@ object LetInliner {
     }
   }
 
+  val INLINE_LIMIT = 50
+
   object RecursiveInliner extends ComposVisitor[Unit] {
     override def visit(p : LetTerm, arg : Unit) : Term =
       super.visit(p, arg) match {
         case p@Let(inner, defs @ _*) => {
           val occs = inner.accept(OccCounter, ())
           val subst =
-            (for ((v, t) <- defs; if occs.getOrElse(v, 0) <= 3)
+            (for ((v, t) <- defs; if occs.getOrElse(v, 0) <= INLINE_LIMIT)
              yield (v -> t)).toMap
 
           if (subst.isEmpty) {
